@@ -1,79 +1,85 @@
-'use client';
-
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CartContext = createContext();
 
-export const useCart = () => useContext(CartContext);
+export function CartProvider({ children }) {
+  const [cart, setCart] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
 
-export const CartProvider = ({ children }) => {
-    const [cartItems, setCartItems] = useState([]);
-    const [isCartOpen, setIsCartOpen] = useState(false);
-    const [total, setTotal] = useState(0);
-
-    useEffect(() => {
-        const newTotal = cartItems.reduce((acc, item) => acc + (parseFloat(item.price) * item.quantity), 0);
-        setTotal(newTotal.toFixed(2));
-    }, [cartItems]);
-
-    // --- THIS IS THE CORRECTED FUNCTION ---
-    const addToCart = (product, options = {}) => {
-        const { quantity = 1, date = null, time = null } = options;
-
-        setCartItems(prevItems => {
-            // In a real app, you might want a more complex check for existing items 
-            // (e.g., same product but different dates should be separate items).
-            // For now, we'll keep it simple and just add it as a new item.
-            const uniqueId = product.id + (date ? `-${date.toISOString()}` : '') + (time ? `-${time}` : '');
-            
-            const existingItem = prevItems.find(item => item.uniqueId === uniqueId);
-
-            if (existingItem) {
-                 return prevItems.map(item =>
-                    item.uniqueId === uniqueId ? { ...item, quantity: item.quantity + quantity } : item
-                );
-            }
-            
-            // Add the new booking details to the item object
-            return [...prevItems, { ...product, quantity, date, time, uniqueId }];
-        });
-        setIsCartOpen(true); // Open cart on add
-    };
-
-    const removeFromCart = (uniqueId) => {
-        setCartItems(prevItems => prevItems.filter(item => item.uniqueId !== uniqueId));
-    };
-
-    const updateQuantity = (uniqueId, newQuantity) => {
-        if (newQuantity < 1) {
-            removeFromCart(uniqueId);
-            return;
+  // 1. Load Cart on Mount
+  useEffect(() => {
+    const loadCart = async () => {
+      try {
+        let savedCart;
+        if (Platform.OS === 'web') {
+          savedCart = localStorage.getItem('hyrosy-cart');
+        } else {
+          savedCart = await AsyncStorage.getItem('hyrosy-cart');
         }
-        setCartItems(prevItems =>
-            prevItems.map(item =>
-                item.uniqueId === uniqueId ? { ...item, quantity: newQuantity } : item
-            )
+        
+        if (savedCart) setCart(JSON.parse(savedCart));
+      } catch (error) {
+        console.error('Failed to load cart:', error);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+    loadCart();
+  }, []);
+
+  // 2. Save Cart whenever it changes
+  useEffect(() => {
+    if (!isLoaded) return; // Don't overwrite storage with empty array on initial load
+
+    const saveCart = async () => {
+      try {
+        const jsonValue = JSON.stringify(cart);
+        if (Platform.OS === 'web') {
+          localStorage.setItem('hyrosy-cart', jsonValue);
+        } else {
+          await AsyncStorage.setItem('hyrosy-cart', jsonValue);
+        }
+      } catch (error) {
+        console.error('Failed to save cart:', error);
+      }
+    };
+    saveCart();
+  }, [cart, isLoaded]);
+
+  const addToCart = (product) => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.id === product.id);
+      if (existing) {
+        return prev.map((item) =>
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
-    };
-    
-    const clearCart = () => setCartItems([]);
-    const openCart = () => setIsCartOpen(true);
-    const closeCart = () => setIsCartOpen(false);
-    const toggleCart = () => setIsCartOpen(prevState => !prevState);
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+  };
 
-    const value = {
-        cartItems,
-        isCartOpen,
-        total,
-        itemCount: cartItems.reduce((acc, item) => acc + item.quantity, 0),
-        addToCart,
-        removeFromCart,
-        updateQuantity,
-        clearCart,
-        openCart,
-        closeCart,
-        toggleCart,
-    };
+  const removeFromCart = (productId) => {
+    setCart((prev) => prev.filter((item) => item.id !== productId));
+  };
 
-    return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
-};
+  const clearCart = async () => {
+    setCart([]);
+    if (Platform.OS === 'web') {
+      localStorage.removeItem('hyrosy-cart');
+    } else {
+      await AsyncStorage.removeItem('hyrosy-cart');
+    }
+  };
+
+  return (
+    <CartContext.Provider value={{ cart, addToCart, removeFromCart, clearCart }}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+
+export function useCart() {
+  return useContext(CartContext);
+}

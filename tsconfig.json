@@ -22,13 +22,15 @@
         "name": "next"
       }
     ],
-    
-    "baseUrl": ".",   // 👈 This makes "@/..." point to ./src and allows other aliases
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "CONFIG": ["./postcss.config.mjs"]   // now "CONFIG" points to your config file
+      "@/*": [
+        "src/*"
+      ],
+      "CONFIG": [
+        "./postcss.config.mjs"
+      ]
     }
-
   },
   "include": [
     "next-env.d.ts",
@@ -38,5 +40,6 @@
   ],
   "exclude": [
     "node_modules"
-  ]
+  ],
+  "extends": "expo/tsconfig.base"
 }

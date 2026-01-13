@@ -1,50 +1,81 @@
-'use client';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native'; // <--- Magic import
+import { supabase as supabaseWeb } from '../lib/supabaseClient'; 
 
-import { createContext, useState, useEffect, useContext } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+// We need to conditionally import the mobile client to avoid web errors
+let supabaseMobile;
+if (Platform.OS !== 'web') {
+  supabaseMobile = require('../lib/supabaseMobile').supabase;
+}
 
 const AuthContext = createContext();
 
-export const AuthProvider = ({ children }) => {
-  const [session, setSession] = useState(null);
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Select the correct client based on the platform
+  const supabase = Platform.OS === 'web' ? supabaseWeb : supabaseMobile;
+
   useEffect(() => {
-    // Check for an existing session when the app loads
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      setLoading(false);
-    };
-
-    getSession();
-
-    // Listen for changes in the authentication state (login/logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
+    // Check active session
+    const checkUser = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+      } catch (error) {
+        console.error('Auth check error:', error);
+      } finally {
+        setLoading(false);
       }
-    );
-
-    // Cleanup the subscription when the component unmounts
-    return () => {
-      subscription?.unsubscribe();
     };
+
+    checkUser();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const value = {
-    session,
-    // We can add login/logout functions here later
+  const signInWithGoogle = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: `${window.location.origin}/auth/callback`,
+          },
+        });
+      } else {
+        // Mobile Google Auth logic (requires deep linking)
+        // For now, we return a message or handle it differently
+        console.log("Mobile Google Auth requires specific setup");
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut }}>
+      {children}
     </AuthContext.Provider>
   );
-};
+}
 
-// Custom hook to easily use the auth context
-export const useAuth = () => {
+export function useAuth() {
   return useContext(AuthContext);
-};
+}
