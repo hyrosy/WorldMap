@@ -1,12 +1,15 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: ["class"],
+  // 1. Apply the NativeWind preset (Crucial for Mobile)
+  presets: [require("nativewind/preset")],
+
+  darkMode: "class",
+  
+  // 2. Scan all files in 'src' for classes
   content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    "./src/**/*.{js,jsx,ts,tsx}"
   ],
-  prefix: "",
+
   theme: {
     container: {
       center: true,
@@ -17,7 +20,7 @@ module.exports = {
     },
     extend: {
       colors: {
-        'golden': '#d3bc8e', // Your custom color is here
+        'golden': '#d3bc8e', // Your custom color
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

@@ -51,9 +51,23 @@ export function AuthProvider({ children }) {
           },
         });
       } else {
-        // Mobile Google Auth logic (requires deep linking)
-        // For now, we return a message or handle it differently
-        console.log("Mobile Google Auth requires specific setup");
+        // Mobile Google Auth using expo-auth-session
+        const redirectUri = AuthSession.makeRedirectUri({
+          useProxy: true,
+        });
+
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUri,
+          },
+        });
+
+        if (error) {
+          console.error('Mobile Google Auth error:', error);
+        } else {
+          console.log('Mobile Google Auth initiated:', data);
+        }
       }
     } catch (error) {
       console.error('Login error:', error);

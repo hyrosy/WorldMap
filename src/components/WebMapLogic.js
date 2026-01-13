@@ -1,10 +1,6 @@
-'use client';
-
-import { useState, useEffect, useRef } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import ProductDetail from '@/components/ProductDetail';
 import PinDetailsModal from '@/components/PinDetailsModal';
-import Image from 'next/image';
 import QuickLocator from '@/components/QuickLocator';
 import StoryModal from '@/components/StoryModal';
 import FilterPanel from '@/components/FilterPanel';
@@ -22,12 +18,10 @@ import useMapData from '@/hooks/useMapData';
 import useQuests from '@/hooks/useQuests';
 import usePinProducts from '@/hooks/usePinProducts';
 import useMapInteraction from '@/hooks/useMapInteraction';
-import { useRouter } from 'next/navigation'; // Use Next router for web back button
+import { useRouter } from 'expo-router'; 
 
-const Map = dynamic(() => import('@/components/Map'), { 
-  ssr: false,
-  loading: () => null
-});
+// Lazy load the Map component to mimic 'dynamic' behavior
+const Map = React.lazy(() => import('@/components/Map'));
 
 // City Data Constant
 const CITY_DATA = {
@@ -202,18 +196,20 @@ export default function WebMapLogic({ initialCityId }) {
         {!isAppReady && (
             <WelcomeOverlay />
         )}
-        <Map 
-            mapRef={mapRef}
-            displayedPins={displayedPins}
-            onPinClick={setSelectedPin}
-            selectedCity={selectedCity}
-            categoryIconMap={categoryIconMap}
-            onLoad={(mapInstance) => { 
-                mapRef.current = mapInstance;
-                setMapLoaded(true);
-             }}
-            experienceRoute={viewingExperience}
-        />
+        <Suspense fallback={null}>
+            <Map 
+                mapRef={mapRef}
+                displayedPins={displayedPins}
+                onPinClick={setSelectedPin}
+                selectedCity={selectedCity}
+                categoryIconMap={categoryIconMap}
+                onLoad={(mapInstance) => { 
+                    mapRef.current = mapInstance;
+                    setMapLoaded(true);
+                }}
+                experienceRoute={viewingExperience}
+            />
+        </Suspense>
         
         <div className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none">
             {isLoading && isAppReady && (

@@ -1,0 +1,8 @@
+{
+  "plugins": [
+    "@rnmapbox/maps"
+  ],
+  "android": {
+    "package": "com.anonymous.hyrosymap"
+  }
+}

@@ -1,5 +1,5 @@
 @import "tailwindcss";
-
+@import 'mapbox-gl/dist/mapbox-gl.css';
 
 /* Add these styles to the bottom of your globals.css file */
 html, body, #__next {

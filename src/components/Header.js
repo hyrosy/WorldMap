@@ -1,134 +1,139 @@
-'use client';
-
 import { useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
+import { View, Text, TouchableOpacity, Image, Modal, Pressable } from 'react-native';
+import { Link, useRouter } from 'expo-router';
 import { useCart } from '@/context/CartContext';
-import { ShoppingCart, User, LogOut, UserCog } from 'lucide-react';
+import { ShoppingCart, User, LogOut, UserCog, X } from 'lucide-react-native';
 
-import { useAuth } from "@/context/AuthContext"; // Import the useAuth hook
-import { supabase } from "@/lib/supabaseClient";   // Import supabase client for logout
-import AuthPanel from "@/components/AuthPanel"; // <-- Correct: No curly braces
-import { Button } from "@/components/ui/button";  // Using your existing Button component
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-// A simple dropdown component for the menu
-const Dropdown = ({ trigger, children }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  return (
-    <div className="relative" onMouseLeave={() => setIsOpen(false)}>
-      <button onMouseEnter={() => setIsOpen(true)}>
-        {trigger}
-      </button>
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-30">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const DropdownItem = ({ children, onClick }) => (
-  <button
-    onClick={onClick}
-    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-  >
-    {children}
-  </button>
-);
-
+import { useAuth } from "@/context/AuthContext"; 
+import { supabase } from "@/lib/supabaseClient";   
+import AuthPanel from "@/components/AuthPanel"; 
 
 export default function Header() {
   const { toggleCart, itemCount } = useCart();
-  const { session } = useAuth(); // Get the user session from our context
+  const { session } = useAuth();
+  const router = useRouter();
+  
   const [isAuthPanelOpen, setAuthPanelOpen] = useState(false);
+  const [isMenuOpen, setMenuOpen] = useState(false);
 
   const handleLogout = async () => {
+    setMenuOpen(false);
     await supabase.auth.signOut();
   };
 
-
+  const handleNavigation = (path) => {
+    setMenuOpen(false);
+    router.push(path);
+  };
 
   return (
-    <>
-    <header className="sticky top-0 z-50 w-full border-b border-gray-700 bg-black/80 backdrop-blur-md text-white">
-      <div className="container mx-auto h-20 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+    <View className="z-50 w-full border-b border-gray-700 bg-black/90 pt-12 pb-4">
+      <View className="flex-row items-center justify-between px-6">
 
         {/* Left side: Store Link */}
-        <div className="flex items-center">
-           <Link href="/store" className="text-sm font-medium text-gray-300 transition-colors hover:text-white">
-             Store
+        <View className="flex-1 items-start">
+           <Link href="/store" asChild>
+             <TouchableOpacity>
+                <Text className="text-sm font-medium text-gray-300">Store</Text>
+             </TouchableOpacity>
            </Link>
-        </div>
+        </View>
 
         {/* Center: Logo */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <Link href="/">
-            <Image 
-              src="/hyrosy.png"
-              alt="Hyrosy Logo" 
-              width={80} // Slightly adjusted for balance
-              height={80}
-              className="object-contain"
-            />
+        <View className="items-center justify-center">
+          <Link href="/" asChild>
+            <TouchableOpacity>
+                {/* Note: For Expo, local images often work best with 'require'. 
+                   Ensure the path is correct relative to this file. 
+                */}
+                <Image 
+                  source={require('../../public/hyrosy.png')} 
+                  style={{ width: 40, height: 40, resizeMode: 'contain' }}
+                />
+            </TouchableOpacity>
           </Link>
-        </div>
+        </View>
 
-        {/* Right side: Cart icon */}
-        <div className="flex items-center">
-            <button onClick={toggleCart} className="relative p-2 rounded-full text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
-              <ShoppingCart className="h-6 w-6" />
+        {/* Right side: Cart & Auth */}
+        <View className="flex-1 flex-row items-center justify-end gap-4">
+            
+            {/* Cart Button */}
+            <TouchableOpacity onPress={toggleCart} className="relative p-2">
+              <ShoppingCart size={24} color="#d1d5db" /> {/* text-gray-300 */}
               {itemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                      {itemCount}
-                  </span>
+                  <View className="absolute top-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 border border-black">
+                      <Text className="text-[10px] font-bold text-white">
+                          {itemCount}
+                      </Text>
+                  </View>
               )}
-               <span className="sr-only">Open cart</span>
-            </button>
+            </TouchableOpacity>
+
             {/* === AUTH SECTION === */}
             {session ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                     <User className="h-6 w-6 text-gray-300" />
-                  </Button>
-                </DropdownMenuTrigger>
-                {/* 1. Added bg-background and text-foreground for proper theme colors */}
-                <DropdownMenuContent className="w-56 bg-background text-foreground" align="end" forceMount>
-                  
-                  {/* 2. Wrapped the content in a Link component */}
-                  <DropdownMenuItem asChild>
-                    <Link href="/account" className="cursor-pointer">
-                      <UserCog className="mr-2 h-4 w-4" />
-                      <span>Account Info</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuSeparator />
-                  
-                  <DropdownMenuItem onSelect={handleLogout} className="text-red-600 focus:text-red-600 cursor-pointer">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <Button variant="outline" className="text-white border-gray-500 hover:bg-white/10 hover:text-white" onClick={() => setAuthPanelOpen(true)}>
-                Log In
-              </Button>
-            )}
-          </div>
-        </div>
-      </header>
+              <View className="relative">
+                <TouchableOpacity 
+                    onPress={() => setMenuOpen(!isMenuOpen)}
+                    className="h-8 w-8 rounded-full bg-gray-800 items-center justify-center border border-gray-600"
+                >
+                     <User size={18} color="#d1d5db" />
+                </TouchableOpacity>
 
-      {isAuthPanelOpen && <AuthPanel onClose={() => setAuthPanelOpen(false)} />}
-    </>
+                {/* Mobile Dropdown / Menu Overlay */}
+                {isMenuOpen && (
+                    <>
+                        {/* Invisible backdrop to close menu when clicking outside */}
+                        <Pressable 
+                            className="absolute -top-[1000px] -left-[1000px] w-[2000px] h-[2000px] z-0" 
+                            onPress={() => setMenuOpen(false)}
+                        />
+                        
+                        {/* The Menu */}
+                        <View className="absolute top-10 right-0 w-48 bg-white rounded-lg shadow-xl z-50 overflow-hidden py-1">
+                            <TouchableOpacity 
+                                onPress={() => handleNavigation('/account')}
+                                className="flex-row items-center px-4 py-3 active:bg-gray-100"
+                            >
+                                <UserCog size={16} color="black" className="mr-2" />
+                                <Text className="text-gray-900 text-sm">Account Info</Text>
+                            </TouchableOpacity>
+                            
+                            <View className="h-[1px] bg-gray-200 w-full" />
+                            
+                            <TouchableOpacity 
+                                onPress={handleLogout}
+                                className="flex-row items-center px-4 py-3 active:bg-gray-100"
+                            >
+                                <LogOut size={16} color="#dc2626" className="mr-2" />
+                                <Text className="text-red-600 text-sm">Log out</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                )}
+              </View>
+            ) : (
+              <TouchableOpacity 
+                className="border border-gray-500 rounded-md px-3 py-1.5 active:bg-white/10"
+                onPress={() => setAuthPanelOpen(true)}
+              >
+                <Text className="text-white text-sm font-medium">Log In</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+      {/* Auth Modal/Panel */}
+      <Modal
+        visible={isAuthPanelOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setAuthPanelOpen(false)}
+      >
+         <View className="flex-1 justify-end">
+            {/* Pass onClose to your existing AuthPanel logic */}
+            <AuthPanel onClose={() => setAuthPanelOpen(false)} />
+         </View>
+      </Modal>
+    </View>
   );
 }

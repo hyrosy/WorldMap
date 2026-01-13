@@ -1,20 +1,24 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useState, useEffect, useRef } from 'react';
+// import Map from component (Web version uses standard Mapbox GL)
+import Map from '@/components/Map'; 
+
 import ProductDetail from '@/components/ProductDetail';
 import PinDetailsModal from '@/components/PinDetailsModal';
-import Image from 'next/image';
 import QuickLocator from '@/components/QuickLocator';
 import StoryModal from '@/components/StoryModal';
 import FilterPanel from '@/components/FilterPanel';
 import QuestPanel from '@/components/QuestPanel';
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/context/CartContext";
+// Valid for Web:
 import { MapPin, Search, Route, BookOpen, Crosshair, ArrowLeft } from 'lucide-react';
 import StoryArchivePanel from '@/components/StoryArchivePanel';
-import mapboxgl from 'mapbox-gl'; 
 import WelcomeOverlay from '@/components/WelcomeOverlay';
+
+// Expo Router for Navigation
+import { useRouter } from 'expo-router'; 
 
 // Hooks
 import { usePwaInstall } from '@/hooks/usePwaInstall';
@@ -22,12 +26,6 @@ import useMapData from '@/hooks/useMapData';
 import useQuests from '@/hooks/useQuests';
 import usePinProducts from '@/hooks/usePinProducts';
 import useMapInteraction from '@/hooks/useMapInteraction';
-import { useRouter } from 'next/navigation'; // Use Next router for web back button
-
-const Map = dynamic(() => import('@/components/Map'), { 
-  ssr: false,
-  loading: () => null
-});
 
 // City Data Constant
 const CITY_DATA = {
@@ -36,10 +34,10 @@ const CITY_DATA = {
   'rabat': { name: 'Rabat', center: [-6.84, 34.02], storyUrl: '/videos/rabat_story.mp4' },
 };
 
-export default function WebMapLogic({ initialCityId }) {
+export default function WebMapPage({ initialCityId }) {
     const router = useRouter();
     
-    // --- Initialize state with prop if available ---
+    // --- Initialize state ---
     const [selectedCity, setSelectedCity] = useState(
         initialCityId && CITY_DATA[initialCityId] 
         ? CITY_DATA[initialCityId] 
@@ -75,6 +73,7 @@ export default function WebMapLogic({ initialCityId }) {
     const mapRef = useRef(null);
     const { addToCart } = useCart();
 
+    // ... [Logic remains exactly the same as you provided] ...
     const handleViewExperience = async (route) => {
         if (!route || !route.stops || route.stops.length === 0) {
             setViewingExperience(null);
@@ -232,7 +231,7 @@ export default function WebMapLogic({ initialCityId }) {
 
             {isAppReady && (
               <>
-            {/* Back to Dashboard Button (New for Universal App) */}
+            {/* Back to Dashboard Button */}
             <div className="absolute top-4 left-4 pointer-events-auto">
                  <Button 
                     variant="secondary" 
@@ -251,6 +250,7 @@ export default function WebMapLogic({ initialCityId }) {
             >
                 <Crosshair className="h-6 w-6 text-gray-700" />
             </button>
+            {/* Note: 'handleInstallClick' logic might need checking if it relies on browser events */}
             <button onClick={handleInstallClick} className="bg-white/80 backdrop-blur-sm rounded-full h-12 w-12 flex items-center justify-center shadow-lg hover:bg-white transition-colors mt-2">App</button>
             </div>
 
