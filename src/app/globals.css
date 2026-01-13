@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+
+/* Add these styles to the bottom of your globals.css file */
+html, body, #__next {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.user-marker {
+  background-image: url('/user-marker.png');
+  background-size: cover;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.custom-marker {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  background-color: #444444;
+  border-radius: 50%;
+  border: 2px solid rgb(255, 215, 0);
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  cursor: pointer;
+}
+
+.custom-marker img {
+  width: 16px;  /* This will correctly size your icon */
+  height: 16px;
+}
+
+/* --- ADD THE NEW FLOATING ANIMATION --- */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+  10% {
+    transform: translateY(-5px); /* Moves the balloon up */
+  }
+  20% {
+    transform: translateY(+5px); /* Moves the balloon up */
+  }
+  40% {
+    transform: translateY(-5px); /* Moves the balloon up */
+  }
+  60% {
+    transform: translateY(+5px); /* Moves the balloon up */
+  }
+  80% {
+    transform: translateY(-5px); /* Moves the balloon up */
+  }
+  100% {
+    transform: translateX(150px);
+  }
+}
+
+.animate-float {
+  /* This makes the animation loop smoothly forever */
+  animation: float 5s ease-in-out infinite;
+}
