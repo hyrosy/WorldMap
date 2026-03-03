@@ -37,10 +37,9 @@
       ]
     },
     "web": {
-      "favicon": "./public/favicon.ico",
+      "favicon": "./public/hyrosy.png",
       "bundler": "metro"
-    },
-    "plugins": [
+    },    "plugins": [
       "expo-router",
       "@rnmapbox/maps",
       [
@@ -55,7 +54,8 @@
           "merchantIdentifier": "merchant.com.hyrosy.app",
           "enableApplePay": true
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }
