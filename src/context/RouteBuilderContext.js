@@ -1,5 +1,3 @@
-'use client';
-
 import { createContext, useContext, useState } from 'react';
 
 const RouteBuilderContext = createContext();
@@ -12,7 +10,6 @@ export const RouteBuilderProvider = ({ children }) => {
     setStops((prevStops) => {
       // Check if the pin is already in the list
       if (prevStops.find(stop => stop.id === pin.id)) {
-        // Here you could show a notification that it's already added
         console.log("Location already in the current experience.");
         return prevStops;
       }

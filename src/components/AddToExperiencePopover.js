@@ -1,123 +1,168 @@
-'use client';
-
 import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from 'react-native';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { toast } from "sonner"; // 1. Import the toast function from sonner
-import { Loader2 } from 'lucide-react';
+
+// Helper for cross-platform alerts
+const showAlert = (title, message) => {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}: ${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
 
 export default function AddToExperiencePopover({ pin, closePopover }) {
   const { session } = useAuth();
-  const [routes, setRoutes] = useState([]);
+  const [maps, setMaps] = useState([]); // Changed from 'routes' to 'maps'
   const [loading, setLoading] = useState(true);
-  const [newRouteName, setNewRouteName] = useState('');
+  const [newMapTitle, setNewMapTitle] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  // Fetch the user's existing routes when the component mounts
+  // 1. Fetch the user's existing Maps and their current Pins
   useEffect(() => {
-    const fetchRoutes = async () => {
+    const fetchUserMaps = async () => {
       if (!session?.user) return;
       setLoading(true);
+      
       const { data, error } = await supabase
-        .from('routes')
-        .select('id, name, stops')
-        .eq('user_id', session.user.id);
+        .from('user_maps')
+        .select('id, title, user_map_pins(location_id)') // Fetch the map and its pins
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false });
       
       if (error) {
-        console.error('Error fetching routes:', error);
+        console.error('Error fetching user maps:', error);
       } else {
-        setRoutes(data);
+        setMaps(data);
       }
       setLoading(false);
     };
-    fetchRoutes();
+    fetchUserMaps();
   }, [session]);
 
-  // Function to add the pin to an existing route
-  const handleAddToExisting = async (route) => {
-    if (route.stops.includes(pin.id)) {
-        // 3. Use sonner's functional syntax
-        toast.info("Already exists", { description: `This location is already in "${route.name}".` });
+  // 2. Add the pin to an existing Map
+  const handleAddToExisting = async (map) => {
+    // Check if the pin is already in this map
+    const existingPinIds = map.user_map_pins.map(p => p.location_id);
+    
+    if (existingPinIds.includes(pin.id)) {
+        showAlert("Already exists", `This location is already in "${map.title}".`);
         closePopover();
         return;
     }
 
-    const updatedStops = [...route.stops, pin.id];
+    // Insert into the relational table. We put it at the end of the list (order_index)
     const { error } = await supabase
-      .from('routes')
-      .update({ stops: updatedStops })
-      .eq('id', route.id);
+      .from('user_map_pins')
+      .insert({
+          map_id: map.id,
+          location_id: pin.id,
+          order_index: existingPinIds.length 
+      });
     
     if (error) {
-        toast.error("Error", { description: "Could not add to experience." });
+        showAlert("Error", "Could not add to experience.");
     } else {
-        toast.success("Success!", { description: `Added to "${route.name}".` });
+        showAlert("Success!", `Added to "${map.title}".`);
     }
     closePopover();
   };
 
-  // Function to create a new route with the current pin
+  // 3. Create a new Map and add the current pin to it
   const handleCreateAndAdd = async () => {
-    if (!newRouteName.trim() || !session?.user) return;
+    if (!newMapTitle.trim() || !session?.user) return;
     
     setIsCreating(true);
-    const { error } = await supabase
-      .from('routes')
+    
+    // Step A: Create the new Map
+    const { data: newMapData, error: mapError } = await supabase
+      .from('user_maps')
       .insert({
-        name: newRouteName,
+        title: newMapTitle,
         user_id: session.user.id,
-        stops: [pin.id],
-      });
+      })
+      .select()
+      .single();
 
-    if (error) {
-        toast.error("Error", { description: "Could not create experience." });
-    } else {
-        toast.success("Success!", { description: `Created "${newRouteName}" and added location.` });
+    if (mapError) {
+        showAlert("Error", "Could not create experience.");
+        setIsCreating(false);
+        return;
     }
+
+    // Step B: Add the Pin to the newly created Map
+    const { error: pinError } = await supabase
+        .from('user_map_pins')
+        .insert({
+            map_id: newMapData.id,
+            location_id: pin.id,
+            order_index: 0
+        });
+
+    if (pinError) {
+        showAlert("Error", `Created "${newMapTitle}" but failed to add the location.`);
+    } else {
+        showAlert("Success!", `Created "${newMapTitle}" and added location.`);
+    }
+    
     setIsCreating(false);
     closePopover();
   };
 
-
   if (loading) {
-    return <div className="p-4 w-56 flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
+    return (
+        <View className="p-6 items-center justify-center">
+            <ActivityIndicator color="#22d3ee" />
+        </View>
+    );
   }
 
   return (
-    <div className="p-1 w-56">
-        <p className="font-semibold text-sm p-2">Add to Experience</p>
-        <div className="max-h-32 overflow-y-auto">
-            {routes.map(route => (
-                <button 
-                    key={route.id} 
-                    onClick={() => handleAddToExisting(route)}
-                    className="w-full text-left text-sm p-2 rounded-sm hover:bg-accent"
-                >
-                    {route.name}
-                </button>
-            ))}
-        </div>
+    <View className="flex-col w-full">
+        <Text className="font-bold text-gray-300 text-sm mb-3 uppercase tracking-wider">Your Maps</Text>
+        
+        {/* Existing Maps List */}
+        <ScrollView className="max-h-40 mb-4" showsVerticalScrollIndicator={false}>
+            {maps.length > 0 ? (
+                maps.map(map => (
+                    <TouchableOpacity 
+                        key={map.id} 
+                        onPress={() => handleAddToExisting(map)}
+                        className="w-full bg-gray-900 border border-gray-700 p-3 rounded-lg mb-2 active:bg-gray-700 transition-colors"
+                    >
+                        <Text className="text-white font-medium">{map.title}</Text>
+                        <Text className="text-xs text-cyan-400 mt-1">{map.user_map_pins.length} locations</Text>
+                    </TouchableOpacity>
+                ))
+            ) : (
+                <Text className="text-gray-500 italic text-sm py-2">No maps created yet.</Text>
+            )}
+        </ScrollView>
 
-        <div className="mt-2 pt-2 border-t">
-            <p className="font-semibold text-sm p-2">Create New</p>
-            <div className="px-2 space-y-2">
-                <Input 
+        <View className="pt-4 border-t border-gray-700">
+            <Text className="font-bold text-gray-300 text-sm mb-3 uppercase tracking-wider">Create New Map</Text>
+            <View className="space-y-3">
+                <TextInput 
                     placeholder="New experience name..." 
-                    value={newRouteName}
-                    onChange={(e) => setNewRouteName(e.target.value)}
+                    placeholderTextColor="#9ca3af"
+                    value={newMapTitle}
+                    onChangeText={setNewMapTitle}
+                    className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white"
                 />
-                <Button 
-                    size="sm" 
-                    className="w-full" 
-                    onClick={handleCreateAndAdd}
-                    disabled={isCreating}
+                <TouchableOpacity 
+                    onPress={handleCreateAndAdd}
+                    disabled={isCreating || !newMapTitle.trim()}
+                    className={`w-full h-12 rounded-lg items-center justify-center ${isCreating || !newMapTitle.trim() ? 'bg-gray-700' : 'bg-green-600 active:bg-green-700'}`}
                 >
-                    {isCreating ? <Loader2 className="animate-spin h-4 w-4" /> : "Create & Add"}
-                </Button>
-            </div>
-        </div>
-    </div>
+                    {isCreating ? (
+                        <ActivityIndicator color="white" />
+                    ) : (
+                        <Text className="text-white font-bold">Create & Add</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+        </View>
+    </View>
   );
 }

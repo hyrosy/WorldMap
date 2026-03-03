@@ -19,17 +19,16 @@ module.exports = {
       },
     },
     extend: {
-      colors: {
-        'golden': '#d3bc8e', // Your custom color
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
+    colors: {
+      'golden': '#d3bc8e',
+      // Provide hardcoded hex fallbacks for Mobile
+      border: Platform.OS === 'web' ? "hsl(var(--border))" : "#374151", 
+      background: Platform.OS === 'web' ? "hsl(var(--background))" : "#000000",
+      foreground: Platform.OS === 'web' ? "hsl(var(--foreground))" : "#ffffff",
+      primary: {
+        DEFAULT: Platform.OS === 'web' ? "hsl(var(--primary))" : "#22d3ee",
+        foreground: Platform.OS === 'web' ? "hsl(var(--primary-foreground))" : "#000000",
+      },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",

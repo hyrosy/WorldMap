@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabaseClient'; // <-- ADDED for Supabase queries
 
 // --- ICONS (Native Versions) ---
 import { MapPin, Search, Route as RouteIcon, BookOpen, Crosshair, ArrowLeft } from 'lucide-react-native';
 
 // --- COMPONENTS ---
-// We assume these have been/will be converted to Native as well
 import UniversalMap from '@/components/UniversalMap';
 import QuickLocator from '@/components/QuickLocator';
 import FilterPanel from '@/components/FilterPanel';
@@ -54,7 +54,7 @@ export default function MapScreen() {
     
     // App Readiness
     const [isAppReady, setAppReady] = useState(false);
-    const [isMapLoaded, setMapLoaded] = useState(false); // Track if Native Map is ready
+    const [isMapLoaded, setMapLoaded] = useState(false); 
     
     // Panel State
     const [isQuestPanelOpen, setQuestPanelOpen] = useState(false);
@@ -62,11 +62,10 @@ export default function MapScreen() {
     const [initialStoryId, setInitialStoryId] = useState(null);
 
     // Refs & Hooks
-    const mapRef = useRef(null); // This will now hold the NATIVE Mapbox ref
+    const mapRef = useRef(null); 
     const { addToCart } = useCart();
 
     // --- DATA HOOKS ---
-    // (Ensure these hooks do NOT use 'window' or 'document' internally)
     const {
         isLoading,
         allPins,
@@ -87,7 +86,7 @@ export default function MapScreen() {
     } = useQuests(mapRef, setSelectedPin);
 
     const modalProducts = usePinProducts(selectedPin);
-    const { handleGoToUserLocation, handleGetDirections } = useMapInteraction(mapRef);
+    const { handleGoToUserLocation, handleGetDirections, userLocation, directionsRoute } = useMapInteraction(mapRef);
 
     // --- EFFECTS ---
 
@@ -99,25 +98,7 @@ export default function MapScreen() {
         return () => clearTimeout(readyTimer);
     }, []);
 
-    // 2. City Change / Camera FlyTo
-    useEffect(() => {
-        if (!isAppReady || !mapRef.current) return;
-        
-        // Note: Native Mapbox often uses 'cameraRef' or methods on the MapView.
-        // You might need to adjust this depending on how you implemented NativeMap.js
-        if (selectedCity) {
-             // Example for @rnmapbox/maps:
-             // mapRef.current.setCamera({
-             //    centerCoordinate: selectedCity.center,
-             //    zoomLevel: 12,
-             //    animationDuration: 2000,
-             // });
-        } else {
-             handleResetView();
-        }
-    }, [isAppReady, selectedCity]); 
-
-    // 3. Auto-open Story when entering city
+    // 2. Auto-open Story when entering city
     useEffect(() => {
         if (isAppReady && selectedCity && !viewedCities.has(selectedCity.name.toLowerCase())) {
             setStoryContentUrl(selectedCity.storyUrl);
@@ -128,16 +109,32 @@ export default function MapScreen() {
 
     // --- HANDLERS ---
 
+    // UPDATED: Now queries Supabase for Native mobile custom maps!
     const handleViewExperience = async (route) => {
-        // ... (Keep your existing fetch logic here, fetch works in RN) ...
-        // For brevity, using the same logic as your web file
-        if (!route || !route.stops || route.stops.length === 0) {
+        if (!route || !route.user_map_pins || route.user_map_pins.length === 0) {
             setViewingExperience(null);
             return;
         }
         setQuestPanelOpen(false); 
-        // ... Logic to fetch stops ...
-        // Ensure you setViewingExperience(experiencePins) at the end
+
+        try {
+            const locationIds = route.user_map_pins.map(p => p.location_id);
+            const { data: locations, error } = await supabase
+                .from('locations')
+                .select('*')
+                .in('id', locationIds);
+
+            if (error) throw error;
+
+            const orderedPins = route.user_map_pins
+                .sort((a, b) => a.order_index - b.order_index)
+                .map(pinRecord => locations.find(loc => loc.id === pinRecord.location_id))
+                .filter(Boolean);
+
+            setViewingExperience(orderedPins);
+        } catch (error) {
+            console.error("Error fetching experience details:", error);
+        }
     };
 
     const handleReadStory = (storyId) => {
@@ -150,18 +147,26 @@ export default function MapScreen() {
         setSelectedCity(CITY_DATA[cityKey]);
     };
 
+    // UPDATED: Native Mapbox Camera Reset
     const handleResetView = () => {
         if (mapRef.current) {
-            // Native Mapbox Reset View Logic
-            // mapRef.current.setCamera({ ... })
+            mapRef.current.setCamera({
+                centerCoordinate: [-5.5, 32],
+                zoomLevel: 5.5,
+                animationDuration: 1500,
+            });
         }
         setSelectedCity(null);
     };
 
+    // UPDATED: Native Mapbox Camera FlyTo Pin
     const handleSearchResultSelect = (pin) => {
          if (mapRef.current && pin.lat && pin.lng) {
-            // Native flyTo logic
-            // mapRef.current.setCamera({ centerCoordinate: [pin.lng, pin.lat], zoomLevel: 15 });
+            mapRef.current.setCamera({ 
+                centerCoordinate: [pin.lng, pin.lat], 
+                zoomLevel: 15,
+                animationDuration: 1000 
+            });
             
             setTimeout(() => {
                 setSelectedPin(pin);
@@ -171,20 +176,21 @@ export default function MapScreen() {
     };
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <View style={{ flex: 1, backgroundColor: '#111827' }}>
         
         {/* 1. THE MAP LAYER */}
-        {/* We pass props down to UniversalMap so it can render markers on Native */}
         <View style={StyleSheet.absoluteFill}>
             <UniversalMap 
                 mapRef={mapRef}
-                city={selectedCity ? selectedCity.id : null} // Pass ID or object depending on your implementation
-                pins={displayedPins} // NativeMap needs to render these
+                city={selectedCity ? selectedCity.id : null}
+                pins={displayedPins} 
                 onPinClick={setSelectedPin}
                 onMapLoad={(ref) => { 
                     mapRef.current = ref;
                     setMapLoaded(true);
                 }}
+                userLocation={userLocation}           
+                directionsRoute={directionsRoute}     
                 route={viewingExperience}
             />
         </View>
@@ -194,12 +200,12 @@ export default function MapScreen() {
 
         {isLoading && isAppReady && (
              <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color="#fff" />
+                <ActivityIndicator size="large" color="#22d3ee" />
                 <Text style={styles.loadingText}>Entering City...</Text>
             </View>
         )}
 
-        {/* 3. UI CONTROLS LAYER (Pointer events handled naturally in RN) */}
+        {/* 3. UI CONTROLS LAYER */}
         {isAppReady && (
           <SafeAreaView style={styles.uiLayer} pointerEvents="box-none">
             
@@ -213,13 +219,13 @@ export default function MapScreen() {
                  </TouchableOpacity>
             </View>
 
-            {/* Top Right: User Location & Install (Install removed for Native) */}
+            {/* Top Right: User Location */}
             <View style={styles.topRight}>
                 <TouchableOpacity
                     onPress={handleGoToUserLocation}
                     style={styles.circleButton}
                 >
-                    <Crosshair size={24} color="#374151" />
+                    <Crosshair size={24} color="#1f2937" />
                 </TouchableOpacity>
             </View>
 
@@ -258,9 +264,8 @@ export default function MapScreen() {
           </SafeAreaView>
         )}
     
-        {/* 4. MODALS & PANELS (Rendered on top) */}
+        {/* 4. MODALS & PANELS */}
         
-        {/* Quick Locator Modal */}
         {isLocatorOpen && (
              <QuickLocator 
                 isOpen={isLocatorOpen} 
@@ -272,13 +277,18 @@ export default function MapScreen() {
         )}
 
         <QuestPanel
+            onToggleStepExplored={handleToggleStepExplored}
+            exploredSteps={exploredSteps}       
             isOpen={isQuestPanelOpen}
             onClose={() => setQuestPanelOpen(false)}
-            // Pass necessary props...
             quests={quests}
             activeQuest={activeQuest}
-            onQuestSelect={handleQuestSelect}
-            // ...
+            onQuestSelect={handleQuestSelect} 
+            currentStepIndex={questStepIndex} 
+            onStepSelect={handleQuestStepSelect} 
+            selectedCity={selectedCity}
+            allPins={allPins}
+            onViewExperience={handleViewExperience}
         />
 
         <StoryArchivePanel 
@@ -293,7 +303,8 @@ export default function MapScreen() {
             filterData={filterData}
             onFilter={handleFilter}
             onReset={handleReset}
-            // ...
+            allPins={allPins} 
+            onSearchResultSelect={handleSearchResultSelect} 
         />
 
         <PinDetailsModal 
@@ -302,7 +313,9 @@ export default function MapScreen() {
             onClose={() => setSelectedPin(null)}
             onAddToCart={addToCart}
             onReadStory={handleReadStory}
+            onGetDirections={(pin) => handleGetDirections(pin, () => setSelectedPin(null))}
             products={modalProducts?.data}
+            productsStatus={modalProducts?.status}
         />
 
       </View>
@@ -312,15 +325,16 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
     loadingOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(17, 24, 39, 0.7)', // Darker, theme-matching overlay
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 20,
     },
     loadingText: {
-        marginTop: 10,
-        color: 'white',
+        marginTop: 12,
+        color: '#22d3ee', // Cyan accent
         fontWeight: 'bold',
+        fontSize: 16,
     },
     uiLayer: {
         flex: 1,
@@ -328,7 +342,7 @@ const styles = StyleSheet.create({
     },
     topLeft: {
         position: 'absolute',
-        top: 60, // Adjust for status bar
+        top: 60, 
         left: 20,
     },
     topRight: {
@@ -343,7 +357,7 @@ const styles = StyleSheet.create({
         left: 20,
         right: 20,
         flexDirection: 'row',
-        justifyContent: 'space-between', // Or 'center' with gap
+        justifyContent: 'space-between',
         alignItems: 'center',
         gap: 10,
     },
@@ -364,14 +378,16 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: 'black',
+        backgroundColor: '#111827', // Tailwind gray-900
+        borderWidth: 1,
+        borderColor: '#374151', // Tailwind gray-700
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 3,
-        elevation: 5,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 5,
+        elevation: 6,
     },
     filterButton: {
         flex: 1,
@@ -382,15 +398,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 3,
-        elevation: 5,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 5,
+        elevation: 6,
         maxWidth: 200,
     },
     filterButtonText: {
         color: 'black',
-        fontWeight: '600',
+        fontWeight: 'bold',
         fontSize: 16,
     }
 });

@@ -1,20 +1,17 @@
 import { Stack } from "expo-router";
-import { AuthProvider } from "../context/AuthContext";
-import { CartProvider } from "../context/CartContext";
-import "../app/globals.css"; // Load Tailwind styles
+import { Providers } from "./providers"; // <-- Use our new unified wrapper!
+import "./globals.css"; // <-- Fixed relative path
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <CartProvider>
-        {/* The Stack is like the mobile version of a Router */}
-        <Stack 
-          screenOptions={{ 
-            headerShown: false, // We will build custom headers
-            contentStyle: { backgroundColor: '#ffffff' } 
-          }} 
-        />
-      </CartProvider>
-    </AuthProvider>
+    <Providers>
+      {/* The Stack is the mobile navigation router */}
+      <Stack 
+        screenOptions={{ 
+          headerShown: false, // We are building custom headers/overlays
+          contentStyle: { backgroundColor: '#111827' } // Tailwind gray-900 to match your dark theme
+        }} 
+      />
+    </Providers>
   );
 }

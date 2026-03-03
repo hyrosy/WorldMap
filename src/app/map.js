@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 // import Map from component (Web version uses standard Mapbox GL)
 import Map from '@/components/Map'; 
 
 import ProductDetail from '@/components/ProductDetail';
 import PinDetailsModal from '@/components/PinDetailsModal';
 import QuickLocator from '@/components/QuickLocator';
-import StoryModal from '@/components/StoryModal';
 import FilterPanel from '@/components/FilterPanel';
 import QuestPanel from '@/components/QuestPanel';
 import { Button } from "@/components/ui/button";
@@ -17,8 +16,9 @@ import { MapPin, Search, Route, BookOpen, Crosshair, ArrowLeft } from 'lucide-re
 import StoryArchivePanel from '@/components/StoryArchivePanel';
 import WelcomeOverlay from '@/components/WelcomeOverlay';
 
-// Expo Router for Navigation
-import { useRouter } from 'expo-router'; 
+// Expo Router for Navigation and Params
+import { useRouter, useLocalSearchParams } from 'expo-router'; 
+import { supabase } from '@/lib/supabaseClient'; // <-- ADDED for Supabase queries
 
 // Hooks
 import { usePwaInstall } from '@/hooks/usePwaInstall';
@@ -34,8 +34,10 @@ const CITY_DATA = {
   'rabat': { name: 'Rabat', center: [-6.84, 34.02], storyUrl: '/videos/rabat_story.mp4' },
 };
 
-export default function WebMapPage({ initialCityId }) {
+export default function WebMapPage() {
     const router = useRouter();
+    // 1. UPDATED: Catch the URL parameter passed from the home screen
+    const { city: initialCityId } = useLocalSearchParams(); 
     
     // --- Initialize state ---
     const [selectedCity, setSelectedCity] = useState(
@@ -47,20 +49,20 @@ export default function WebMapPage({ initialCityId }) {
     const [viewingExperience, setViewingExperience] = useState(null);
     const { showIosInstallPopup, handleInstallClick, closeIosInstallPopup } = usePwaInstall();
     
+    // 2. UPDATED: Using plain text categories instead of WordPress IDs
     const categoryIconMap = {
-        39  : 'air-balloon.png',
-        37  : 'camel-ride.png',
-        38  : 'quad-bike.png', 
-        44  : 'food.png',   
-        35  : 'monuments.png',  
-        45  : 'shopping.png',   
-        40  : 'tales.png',  
-        42  : 'a-craftsman.png',    
-        33  : 'workshops.png',  
-        34  : 'cooking-class.png',  
-        47  : 'pottery-class.png',  
-        48  : 'artisan-class.png',  
-        36  : 'adventure1.png', 
+        'Activities': 'adventure1.png',
+        'Experiences': 'adventure1.png',
+        'Restaurants': 'food.png',
+        'Food & Cooking': 'food.png',
+        'Monuments': 'monuments.png',
+        'Books & Guides': 'monuments.png',
+        'Shops': 'shopping.png',
+        'Fashion & Accessories': 'shopping.png',
+        'Home Decor': 'shopping.png',
+        'Hotels': 'building.png',
+        'Home & Lifestyle': 'building.png',
+        'Transport': 'quad-bike.png',
     };
 
     const [isFilterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -73,39 +75,31 @@ export default function WebMapPage({ initialCityId }) {
     const mapRef = useRef(null);
     const { addToCart } = useCart();
 
-    // ... [Logic remains exactly the same as you provided] ...
+    // 3. UPDATED: Query Supabase for User Maps instead of WordPress
     const handleViewExperience = async (route) => {
-        if (!route || !route.stops || route.stops.length === 0) {
+        if (!route || !route.user_map_pins || route.user_map_pins.length === 0) {
             setViewingExperience(null);
             return;
         }
         setQuestPanelOpen(false); 
 
-        const stopIds = route.stops.join(',');
-        const apiUrl = `https://data.hyrosy.com/wp-json/wp/v2/locations?acf_format=standard&include=${stopIds}&orderby=include`;
-        
         try {
-            const response = await fetch(apiUrl);
-            if (!response.ok) throw new Error('Failed to fetch experience stops');
-            const fullStopsData = await response.json();
+            const locationIds = route.user_map_pins.map(p => p.location_id);
 
-            const orderedStops = route.stops.map(stopId => 
-                fullStopsData.find(stop => stop.id === stopId)
-            ).filter(Boolean);
+            const { data: locations, error } = await supabase
+                .from('locations')
+                .select('*')
+                .in('id', locationIds);
 
-            const experiencePins = orderedStops.map(loc => {
-                if (!loc.acf || !loc.acf.gps_coordinates || typeof loc.acf.gps_coordinates !== 'string') {
-                    return null;
-                }
-                const coords = loc.acf.gps_coordinates.match(/-?\d+\.\d+/g);
-                if (!coords || coords.length < 2) return null;
-                const lat = parseFloat(coords[0]);
-                const lng = parseFloat(coords[1]);
-                if (isNaN(lat) || isNaN(lng)) return null;
-                return { ...loc, id: loc.id, lat, lng };
-            }).filter(Boolean);
+            if (error) throw error;
 
-            setViewingExperience(experiencePins);
+            // Order them according to how the user arranged them
+            const orderedPins = route.user_map_pins
+                .sort((a, b) => a.order_index - b.order_index)
+                .map(pinRecord => locations.find(loc => loc.id === pinRecord.location_id))
+                .filter(Boolean);
+
+            setViewingExperience(orderedPins);
 
         } catch (error) {
             console.error("Error fetching experience details:", error);
@@ -123,7 +117,9 @@ export default function WebMapPage({ initialCityId }) {
 
     const { quests, activeQuest, questStepIndex, exploredSteps, handleQuestSelect, handleQuestStepSelect, handleToggleStepExplored } = useQuests(mapRef, setSelectedPin);
     const modalProducts = usePinProducts(selectedPin);
-    const { handleGoToUserLocation, handleGetDirections } = useMapInteraction(mapRef);
+    
+    // 4. UPDATED: Extract the new GPS state variables!
+    const { handleGoToUserLocation, handleGetDirections, userLocation, directionsRoute } = useMapInteraction(mapRef);
 
     const [isQuestPanelOpen, setQuestPanelOpen] = useState(false);
     const [isStoryArchiveOpen, setStoryArchiveOpen] = useState(false); 
@@ -201,18 +197,22 @@ export default function WebMapPage({ initialCityId }) {
         {!isAppReady && (
             <WelcomeOverlay />
         )}
-        <Map 
-            mapRef={mapRef}
-            displayedPins={displayedPins}
-            onPinClick={setSelectedPin}
-            selectedCity={selectedCity}
-            categoryIconMap={categoryIconMap}
-            onLoad={(mapInstance) => { 
-                mapRef.current = mapInstance;
-                setMapLoaded(true);
-             }}
-            experienceRoute={viewingExperience}
-        />
+        <Suspense fallback={null}>
+            <Map 
+                mapRef={mapRef}
+                displayedPins={displayedPins}
+                onPinClick={setSelectedPin}
+                selectedCity={selectedCity}
+                categoryIconMap={categoryIconMap}
+                onLoad={(mapInstance) => { 
+                    mapRef.current = mapInstance;
+                    setMapLoaded(true);
+                 }}
+                experienceRoute={viewingExperience}
+                userLocation={userLocation}        
+                directionsRoute={directionsRoute}  
+            />
+        </Suspense>
         
         <div className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none">
             {isLoading && isAppReady && (
@@ -250,7 +250,6 @@ export default function WebMapPage({ initialCityId }) {
             >
                 <Crosshair className="h-6 w-6 text-gray-700" />
             </button>
-            {/* Note: 'handleInstallClick' logic might need checking if it relies on browser events */}
             <button onClick={handleInstallClick} className="bg-white/80 backdrop-blur-sm rounded-full h-12 w-12 flex items-center justify-center shadow-lg hover:bg-white transition-colors mt-2">App</button>
             </div>
 

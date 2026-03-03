@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, Modal, Pressable } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, Image, Modal, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useCart } from '@/context/CartContext';
-import { ShoppingCart, User, LogOut, UserCog, X } from 'lucide-react-native';
+import { ShoppingCart, User, LogOut, UserCog } from 'lucide-react-native';
 
 import { useAuth } from "@/context/AuthContext"; 
 import { supabase } from "@/lib/supabaseClient";   
@@ -27,14 +27,14 @@ export default function Header() {
   };
 
   return (
-    <View className="z-50 w-full border-b border-gray-700 bg-black/90 pt-12 pb-4">
+    <View className="z-50 w-full border-b border-gray-800 bg-gray-900 pt-12 pb-4">
       <View className="flex-row items-center justify-between px-6">
 
         {/* Left side: Store Link */}
         <View className="flex-1 items-start">
            <Link href="/store" asChild>
-             <TouchableOpacity>
-                <Text className="text-sm font-medium text-gray-300">Store</Text>
+             <TouchableOpacity className="active:opacity-70">
+                <Text className="text-base font-bold text-gray-300">Store</Text>
              </TouchableOpacity>
            </Link>
         </View>
@@ -42,10 +42,7 @@ export default function Header() {
         {/* Center: Logo */}
         <View className="items-center justify-center">
           <Link href="/" asChild>
-            <TouchableOpacity>
-                {/* Note: For Expo, local images often work best with 'require'. 
-                   Ensure the path is correct relative to this file. 
-                */}
+            <TouchableOpacity className="active:scale-95 transition-transform">
                 <Image 
                   source={require('../../public/hyrosy.png')} 
                   style={{ width: 40, height: 40, resizeMode: 'contain' }}
@@ -55,14 +52,14 @@ export default function Header() {
         </View>
 
         {/* Right side: Cart & Auth */}
-        <View className="flex-1 flex-row items-center justify-end gap-4">
+        <View className="flex-1 flex-row items-center justify-end gap-5">
             
             {/* Cart Button */}
-            <TouchableOpacity onPress={toggleCart} className="relative p-2">
-              <ShoppingCart size={24} color="#d1d5db" /> {/* text-gray-300 */}
+            <TouchableOpacity onPress={toggleCart} className="relative p-1 active:opacity-70">
+              <ShoppingCart size={24} color="#d1d5db" />
               {itemCount > 0 && (
-                  <View className="absolute top-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 border border-black">
-                      <Text className="text-[10px] font-bold text-white">
+                  <View className="absolute -top-1 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 border-2 border-gray-900">
+                      <Text className="text-[10px] font-black text-gray-900">
                           {itemCount}
                       </Text>
                   </View>
@@ -71,69 +68,61 @@ export default function Header() {
 
             {/* === AUTH SECTION === */}
             {session ? (
-              <View className="relative">
+              <View>
                 <TouchableOpacity 
-                    onPress={() => setMenuOpen(!isMenuOpen)}
-                    className="h-8 w-8 rounded-full bg-gray-800 items-center justify-center border border-gray-600"
+                    onPress={() => setMenuOpen(true)}
+                    className="h-8 w-8 rounded-full bg-gray-800 items-center justify-center border border-gray-700 active:bg-gray-700"
                 >
                      <User size={18} color="#d1d5db" />
                 </TouchableOpacity>
 
-                {/* Mobile Dropdown / Menu Overlay */}
+                {/* Safely Overlay the Dropdown Menu */}
                 {isMenuOpen && (
-                    <>
-                        {/* Invisible backdrop to close menu when clicking outside */}
-                        <Pressable 
-                            className="absolute -top-[1000px] -left-[1000px] w-[2000px] h-[2000px] z-0" 
-                            onPress={() => setMenuOpen(false)}
-                        />
-                        
-                        {/* The Menu */}
-                        <View className="absolute top-10 right-0 w-48 bg-white rounded-lg shadow-xl z-50 overflow-hidden py-1">
-                            <TouchableOpacity 
-                                onPress={() => handleNavigation('/account')}
-                                className="flex-row items-center px-4 py-3 active:bg-gray-100"
-                            >
-                                <UserCog size={16} color="black" className="mr-2" />
-                                <Text className="text-gray-900 text-sm">Account Info</Text>
-                            </TouchableOpacity>
-                            
-                            <View className="h-[1px] bg-gray-200 w-full" />
-                            
-                            <TouchableOpacity 
-                                onPress={handleLogout}
-                                className="flex-row items-center px-4 py-3 active:bg-gray-100"
-                            >
-                                <LogOut size={16} color="#dc2626" className="mr-2" />
-                                <Text className="text-red-600 text-sm">Log out</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </>
+                  <Modal transparent visible={isMenuOpen} animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+                    <TouchableOpacity 
+                      className="flex-1" 
+                      activeOpacity={1} 
+                      onPress={() => setMenuOpen(false)}
+                    >
+                      {/* Positioned relative to the top right of the screen */}
+                      <View className="absolute top-24 right-6 w-52 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden py-2">
+                          <TouchableOpacity 
+                              onPress={() => handleNavigation('/account')}
+                              className="flex-row items-center px-5 py-3.5 active:bg-gray-800"
+                          >
+                              <UserCog size={18} color="#9ca3af" className="mr-3" />
+                              <Text className="text-white font-bold text-sm">Account Info</Text>
+                          </TouchableOpacity>
+                          
+                          <View className="h-[1px] bg-gray-800 w-full my-1" />
+                          
+                          <TouchableOpacity 
+                              onPress={handleLogout}
+                              className="flex-row items-center px-5 py-3.5 active:bg-gray-800"
+                          >
+                              <LogOut size={18} color="#f87171" className="mr-3" />
+                              <Text className="text-red-400 font-bold text-sm">Log out</Text>
+                          </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  </Modal>
                 )}
               </View>
             ) : (
               <TouchableOpacity 
-                className="border border-gray-500 rounded-md px-3 py-1.5 active:bg-white/10"
+                className="bg-gray-800 border border-gray-700 rounded-full px-4 py-2 active:bg-gray-700"
                 onPress={() => setAuthPanelOpen(true)}
               >
-                <Text className="text-white text-sm font-medium">Log In</Text>
+                <Text className="text-white text-sm font-bold">Log In</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
-      {/* Auth Modal/Panel */}
-      <Modal
-        visible={isAuthPanelOpen}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setAuthPanelOpen(false)}
-      >
-         <View className="flex-1 justify-end">
-            {/* Pass onClose to your existing AuthPanel logic */}
-            <AuthPanel onClose={() => setAuthPanelOpen(false)} />
-         </View>
-      </Modal>
+      {/* Conditionally Render the Auth Panel (AuthPanel handles its own Modal now!) */}
+      {isAuthPanelOpen && (
+        <AuthPanel onClose={() => setAuthPanelOpen(false)} />
+      )}
     </View>
   );
 }

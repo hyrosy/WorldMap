@@ -1,24 +1,17 @@
-'use client';
-
 import { CartProvider } from '@/context/CartContext';
-import { usePathname } from 'next/navigation';
-import { AuthProvider } from "@/context/AuthContext"; // 1. Import AuthProvider
-import { RouteBuilderProvider } from "@/context/RouteBuilderContext"; // 1. Import
-
+import { AuthProvider } from "@/context/AuthContext";
+import { RouteBuilderProvider } from "@/context/RouteBuilderContext";
 
 export function Providers({ children }) {
-  const pathname = usePathname();
-
-  // Conditionally render based on the path
-  const isMapPage = pathname === '/';
-  
+  // Pure, clean wrapper for all your global state.
+  // This will be imported into your _layout.js files!
   return (
     <AuthProvider>
-    <CartProvider>
-      <RouteBuilderProvider>
-        {children}
-      </RouteBuilderProvider>
-    </CartProvider>
+      <CartProvider>
+        <RouteBuilderProvider>
+          {children}
+        </RouteBuilderProvider>
+      </CartProvider>
     </AuthProvider>
   );
 }

@@ -1,48 +1,62 @@
-'use client';
-
 import React from 'react';
-import clsx from 'clsx';
-import { Globe, X } from 'lucide-react';
+import { View, Text, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { Globe, X } from 'lucide-react-native';
 
 const QuickLocator = ({ cities, onCitySelect, onResetView, isOpen, onClose }) => {
-
-  const panelClasses = clsx(
-    "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-md rounded-lg shadow-2xl z-50 w-full max-w-xs border border-gray-700 text-white transition-all duration-300 ease-in-out",
-    isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"
-  );
-
   return (
-    <div className={panelClasses}>
-      <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-        <h3 className="font-semibold text-white">Quick Locator</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X className="w-5 h-5" />
-        </button>
-      </div>
-      <ul className="p-2">
-        {/* Special Button for Reset View */}
-        <li className="mb-1">
-          <button
-            onClick={onResetView}
-            className="w-full text-left px-3 py-2 rounded-md text-sm font-semibold text-cyan-400 hover:bg-white/10 transition-colors flex items-center gap-2"
-          >
-            <Globe className="w-4 h-4" />
-            View All Morocco
-          </button>
-        </li>
-        {/* Map over the cities */}
-        {Object.entries(cities).map(([key, city]) => (
-          <li key={key}>
-            <button
-              onClick={() => onCitySelect(key)}
-              className="w-full text-left px-3 py-2 rounded-md text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+    <Modal 
+      visible={isOpen} 
+      transparent={true} 
+      animationType="fade" 
+      onRequestClose={onClose}
+    >
+      {/* Background Dimming Overlay */}
+      <View className="flex-1 justify-center items-center bg-black/70 px-4">
+        
+        {/* Invisible pressable area to close the modal when tapping outside */}
+        <Pressable className="absolute inset-0" onPress={onClose} />
+
+        {/* Modal Content Box */}
+        <View className="w-full max-w-xs bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden z-10">
+          
+          {/* Header */}
+          <View className="p-4 border-b border-gray-800 flex-row justify-between items-center bg-black/40">
+            <Text className="font-bold text-white text-lg tracking-wide">Quick Locator</Text>
+            <TouchableOpacity 
+              onPress={onClose} 
+              className="p-1.5 bg-gray-800 rounded-full active:bg-gray-700"
             >
-              {city.name}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
+              <X size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Options List */}
+          <View className="p-3">
+            
+            {/* Special Button for Reset View */}
+            <TouchableOpacity
+              onPress={onResetView}
+              className="w-full flex-row items-center px-4 py-3.5 rounded-xl bg-cyan-900/20 border border-cyan-900/50 mb-3 active:bg-cyan-900/40 transition-colors"
+            >
+              <Globe size={18} color="#22d3ee" className="mr-3" />
+              <Text className="text-cyan-400 font-bold text-base">View All Morocco</Text>
+            </TouchableOpacity>
+
+            {/* Map over the cities */}
+            {cities && Object.entries(cities).map(([key, city]) => (
+              <TouchableOpacity
+                key={key}
+                onPress={() => onCitySelect(key)}
+                className="w-full px-4 py-3.5 rounded-xl bg-transparent mb-1 active:bg-gray-800 border border-transparent active:border-gray-700 transition-colors"
+              >
+                <Text className="text-gray-300 font-semibold text-base">{city.name}</Text>
+              </TouchableOpacity>
+            ))}
+            
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 };
 

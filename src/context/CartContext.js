@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CartContext = createContext();
@@ -8,18 +7,14 @@ export function CartProvider({ children }) {
   const [cart, setCart] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // 1. Load Cart on Mount
+  // 1. Load Cart on Mount (Works on Web & Mobile automatically!)
   useEffect(() => {
     const loadCart = async () => {
       try {
-        let savedCart;
-        if (Platform.OS === 'web') {
-          savedCart = localStorage.getItem('hyrosy-cart');
-        } else {
-          savedCart = await AsyncStorage.getItem('hyrosy-cart');
+        const savedCart = await AsyncStorage.getItem('hyrosy-cart');
+        if (savedCart) {
+            setCart(JSON.parse(savedCart));
         }
-        
-        if (savedCart) setCart(JSON.parse(savedCart));
       } catch (error) {
         console.error('Failed to load cart:', error);
       } finally {
@@ -36,11 +31,7 @@ export function CartProvider({ children }) {
     const saveCart = async () => {
       try {
         const jsonValue = JSON.stringify(cart);
-        if (Platform.OS === 'web') {
-          localStorage.setItem('hyrosy-cart', jsonValue);
-        } else {
-          await AsyncStorage.setItem('hyrosy-cart', jsonValue);
-        }
+        await AsyncStorage.setItem('hyrosy-cart', jsonValue);
       } catch (error) {
         console.error('Failed to save cart:', error);
       }
@@ -66,11 +57,7 @@ export function CartProvider({ children }) {
 
   const clearCart = async () => {
     setCart([]);
-    if (Platform.OS === 'web') {
-      localStorage.removeItem('hyrosy-cart');
-    } else {
-      await AsyncStorage.removeItem('hyrosy-cart');
-    }
+    await AsyncStorage.removeItem('hyrosy-cart');
   };
 
   return (

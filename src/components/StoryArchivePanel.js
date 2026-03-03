@@ -1,10 +1,10 @@
-// src/components/StoryArchivePanel.js
-'use client';
-
 import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
-import StoryPanel from './StoryPanel';
-import { X, ArrowLeft } from 'lucide-react';
+import { View, Text, TouchableOpacity, Image, Modal, ScrollView, ActivityIndicator, SafeAreaView } from 'react-native';
+import StoryPanel from './StoryPanel'; // Assuming you will/have converted this to Native too!
+import { X, ArrowLeft } from 'lucide-react-native';
+
+// Helper to strip HTML from WordPress excerpts
+const stripHtml = (html) => html ? html.replace(/<[^>]*>?/gm, '').trim() : '';
 
 const StoryArchivePanel = ({ isOpen, onClose, initialStoryId }) => {
     const [stories, setStories] = useState([]);
@@ -17,14 +17,13 @@ const StoryArchivePanel = ({ isOpen, onClose, initialStoryId }) => {
             const fetchStories = async () => {
                 setIsLoading(true);
                 try {
-                    // Use _embed to get details like the featured image
                     const response = await fetch('https://data.hyrosy.com/wp-json/wp/v2/story?_embed');
                     if (!response.ok) {
                         throw new Error('Failed to fetch stories');
                     }
                     const data = await response.json();
                     setStories(data);
-                    setIsListFetched(true); // Mark list as fetched
+                    setIsListFetched(true);
                 } catch (error) {
                     console.error(error);
                 } finally {
@@ -35,7 +34,7 @@ const StoryArchivePanel = ({ isOpen, onClose, initialStoryId }) => {
         }
     }, [isOpen, isListFetched]);
 
-    // This effect checks if the panel should open directly to a story
+    // Check if the panel should open directly to a story
     useEffect(() => {
         if (isOpen && initialStoryId) {
             setSelectedStoryId(initialStoryId);
@@ -58,52 +57,96 @@ const StoryArchivePanel = ({ isOpen, onClose, initialStoryId }) => {
     };
 
     return (
-        <div className={`fixed top-0 right-0 h-full bg-gray-900 text-white w-full max-w-sm z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-            {/* Panel Header */}
-            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-                {selectedStoryId ? (
-                    <button onClick={handleBackToList} className="text-gray-300 hover:text-white transition-colors flex items-center text-sm">
-                        <ArrowLeft className="w-4 h-4 mr-2" />
-                        Back to Stories
-                    </button>
-                ) : (
-                    <h2 className="text-lg font-semibold">Story Archive</h2>
-                )}
-                <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-5 h-5"/></button>
-            </div>
+        <Modal
+            visible={isOpen}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={onClose}
+        >
+            {/* Background Overlay */}
+            <View className="flex-1 justify-end bg-black/70 flex-row">
+                
+                {/* Clickable transparent area to close */}
+                <TouchableOpacity className="flex-1" onPress={onClose} />
 
-            {/* Panel Content */}
-            <div className="overflow-y-auto h-[calc(100%-60px)]">
-                {selectedStoryId ? (
-                    // If a story is selected, show it immediately
-                    <StoryPanel storyId={selectedStoryId} />
-                ) : isLoading ? (
-                    // Show loader only for the list view
-                    <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div></div>
-                ) : (
-                    // Otherwise, show the list of stories
-                    <div className="p-4 space-y-4">
-                        {stories.length > 0 ? stories.map(story => (
-                            <div key={story.id} onClick={() => handleSelectStory(story.id)} className="flex items-center gap-4 p-2 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors">
-                                <div className="relative w-24 h-16 bg-gray-700 rounded-md overflow-hidden flex-shrink-0">
-                                    {story._embedded?.['wp:featuredmedia']?.[0]?.source_url && (
-                                        <Image src={story._embedded['wp:featuredmedia'][0].source_url} alt={story.title.rendered} fill className="object-cover"/>
-                                    )}
-                                </div>
-                                <div>
-                                    <h3 className="font-semibold text-white">{story.title.rendered}</h3>
-                                    {story.excerpt?.rendered && (
-                                         <div className="text-sm text-gray-400 line-clamp-2" dangerouslySetInnerHTML={{ __html: story.excerpt.rendered }}/>
-                                    )}
-                                </div>
-                            </div>
-                        )) : (
-                             <p className="text-center text-gray-400 mt-8">No stories found.</p>
+                {/* Slide-in Panel */}
+                <SafeAreaView className="w-[85%] max-w-sm h-full bg-gray-900 shadow-2xl flex-col border-l border-gray-800 pt-10">
+                    
+                    {/* Panel Header */}
+                    <View className="flex-row justify-between items-center p-5 bg-black border-b border-gray-800">
+                        {selectedStoryId ? (
+                            <TouchableOpacity 
+                                onPress={handleBackToList} 
+                                className="flex-row items-center active:opacity-70"
+                            >
+                                <ArrowLeft size={20} color="#d1d5db" className="mr-2" />
+                                <Text className="text-gray-300 font-bold text-base">Back to Stories</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <Text className="text-xl font-bold text-white tracking-wide">Story Archive</Text>
                         )}
-                    </div>
-                )}
-            </div>
-        </div>
+                        <TouchableOpacity onPress={onClose} className="p-2 bg-gray-800 rounded-full active:bg-gray-700">
+                            <X size={20} color="#9ca3af" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Panel Content */}
+                    <View className="flex-1">
+                        {selectedStoryId ? (
+                            // Show selected story immediately
+                            <StoryPanel storyId={selectedStoryId} />
+                        ) : isLoading ? (
+                            // Show loader
+                            <View className="flex-1 items-center justify-center">
+                                <ActivityIndicator size="large" color="#22d3ee" />
+                            </View>
+                        ) : (
+                            // Show the list of stories
+                            <ScrollView className="flex-1 px-4 py-2" showsVerticalScrollIndicator={false}>
+                                {stories.length > 0 ? stories.map(story => {
+                                    const imageUrl = story._embedded?.['wp:featuredmedia']?.[0]?.source_url;
+                                    
+                                    return (
+                                        <TouchableOpacity 
+                                            key={story.id} 
+                                            onPress={() => handleSelectStory(story.id)} 
+                                            className="flex-row items-center gap-4 p-3 mb-2 rounded-xl bg-gray-800/50 border border-gray-800 active:bg-gray-800 transition-colors"
+                                        >
+                                            <View className="relative w-24 h-20 bg-gray-800 rounded-lg overflow-hidden flex-shrink-0 border border-gray-700">
+                                                {imageUrl ? (
+                                                    <Image 
+                                                        source={{ uri: imageUrl }} 
+                                                        className="w-full h-full" 
+                                                        resizeMode="cover"
+                                                    />
+                                                ) : (
+                                                    <View className="w-full h-full items-center justify-center bg-gray-800">
+                                                        <Text className="text-gray-500 text-xs">No Image</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <View className="flex-1">
+                                                <Text className="font-bold text-white text-base mb-1" numberOfLines={2}>
+                                                    {story.title.rendered}
+                                                </Text>
+                                                {story.excerpt?.rendered && (
+                                                    // numberOfLines automatically truncates with '...' natively!
+                                                    <Text className="text-xs text-gray-400 leading-tight" numberOfLines={2}>
+                                                        {stripHtml(story.excerpt.rendered)}
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                }) : (
+                                    <Text className="text-center text-gray-500 mt-8 italic">No stories found.</Text>
+                                )}
+                            </ScrollView>
+                        )}
+                    </View>
+                </SafeAreaView>
+            </View>
+        </Modal>
     );
 };
 

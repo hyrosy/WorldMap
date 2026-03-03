@@ -2,14 +2,14 @@ import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 
-// Set your public access token here
-Mapbox.setAccessToken('pk.eyJ1IjoiaHlyb3N5IiwiYSI6ImNtZW84aHIyMzFjNXEybXNlZzN0c294N3oifQ.xSS6R2U0ClqqtR9Tfxmntw');
+// Read token from Expo environment variables, fallback to string if missing
+Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoiaHlyb3N5IiwiYSI6ImNtZW84aHIyMzFjNXEybXNlZzN0c294N3oifQ.xSS6R2U0ClqqtR9Tfxmntw');
 
-export default function NativeMap({ mapRef, city, pins, onPinClick, onMapLoad, route }) {
+// UPDATED PROPS: Added userLocation and directionsRoute
+export default function NativeMap({ mapRef, city, pins, onPinClick, onMapLoad, route, userLocation, directionsRoute }) {
 
   // --- 1. Auto-Fly to City when "city" prop changes ---
   useEffect(() => {
-    // If the map isn't ready or no city is selected, do nothing
     if (!mapRef?.current) return;
 
     // Define coordinates for your cities
@@ -22,32 +22,27 @@ export default function NativeMap({ mapRef, city, pins, onPinClick, onMapLoad, r
     const target = cityCoords[city];
 
     if (target) {
-        // Fly to the specific city
         mapRef.current.setCamera({
             centerCoordinate: target,
             zoomLevel: 12,
             animationDuration: 2000,
         });
     } else {
-        // Reset View (Show all of Morocco) if city is null
         mapRef.current.setCamera({
             centerCoordinate: [-5.5, 32],
             zoomLevel: 5.5,
             animationDuration: 2000,
         });
     }
-  }, [city]); // <-- This effect runs whenever 'city' changes
+  }, [city]); 
 
   return (
     <View style={styles.container}>
       <Mapbox.MapView 
         style={styles.map}
-        // Use your custom style from the web version to keep it consistent
         styleURL="mapbox://styles/hyrosy/cmet0cvjx00db01qwc2gfet91"
-        // Notify parent when map is ready
         onDidFinishLoadingMap={() => onMapLoad && onMapLoad(mapRef.current)}
       >
-        {/* Pass the ref to the Camera so we can control it from the parent */}
         <Mapbox.Camera
           ref={mapRef}
           defaultSettings={{
@@ -61,19 +56,56 @@ export default function NativeMap({ mapRef, city, pins, onPinClick, onMapLoad, r
             <Mapbox.PointAnnotation
                 key={pin.id}
                 id={`pin-${pin.id}`}
-                // Ensure coordinates are numbers
+                // Supabase returns clean floats, no string parsing needed!
                 coordinate={[parseFloat(pin.lng), parseFloat(pin.lat)]}
                 onSelected={() => onPinClick(pin)}
             >
-                {/* Custom Marker View */}
                 <View style={styles.markerContainer}>
-                   {/* You can add an <Image> here for custom icons based on pin.category */}
                    <View style={styles.markerDot} /> 
                 </View>
             </Mapbox.PointAnnotation>
         ))}
 
-        {/* --- 3. RENDER ROUTE (If available) --- */}
+        {/* --- 3. RENDER USER GPS LOCATION (NEW) --- */}
+        {userLocation && (
+            <Mapbox.PointAnnotation
+                id="user-location-marker"
+                coordinate={userLocation}
+            >
+                <View style={styles.userMarkerContainer}>
+                   <View style={styles.userMarkerRing} />
+                   <View style={styles.userMarkerDot} /> 
+                </View>
+            </Mapbox.PointAnnotation>
+        )}
+
+        {/* --- 4. RENDER A-TO-B DIRECTIONS ROUTE (NEW) --- */}
+        {directionsRoute && directionsRoute.length > 1 && (
+            <Mapbox.ShapeSource
+                id="directionsSource"
+                shape={{
+                    type: 'Feature',
+                    geometry: {
+                        type: 'LineString',
+                        // directionsRoute is already a nested array of coordinates from the hook
+                        coordinates: directionsRoute, 
+                    },
+                }}
+            >
+                <Mapbox.LineLayer
+                    id="directionsLayer"
+                    style={{
+                        lineColor: '#EFBF04', // Golden color for directions
+                        lineWidth: 5,
+                        lineOpacity: 0.85,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                    }}
+                />
+            </Mapbox.ShapeSource>
+        )}
+
+        {/* --- 5. RENDER EXPERIENCE ROUTE (Stops Connection) --- */}
         {route && route.length > 1 && (
             <Mapbox.ShapeSource
                 id="routeSource"
@@ -81,7 +113,6 @@ export default function NativeMap({ mapRef, city, pins, onPinClick, onMapLoad, r
                     type: 'Feature',
                     geometry: {
                         type: 'LineString',
-                        // Extract coordinates from your route array
                         coordinates: route.map(p => [parseFloat(p.lng), parseFloat(p.lat)]),
                     },
                 }}
@@ -89,11 +120,12 @@ export default function NativeMap({ mapRef, city, pins, onPinClick, onMapLoad, r
                 <Mapbox.LineLayer
                     id="routeLayer"
                     style={{
-                        lineColor: '#3887be',
-                        lineWidth: 5,
+                        lineColor: '#3887be', // Blue color for Experiences
+                        lineWidth: 4,
                         lineOpacity: 0.75,
                         lineCap: 'round',
                         lineJoin: 'round',
+                        lineDasharray: [2, 2], // Dashed line to separate from live GPS directions
                     }}
                 />
             </Mapbox.ShapeSource>
@@ -113,7 +145,6 @@ const styles = StyleSheet.create({
       alignItems: 'center',
       justifyContent: 'center',
   },
-  // Customize your pin style here
   markerDot: {
       width: 20,
       height: 20,
@@ -122,12 +153,33 @@ const styles = StyleSheet.create({
       borderWidth: 2,
       borderColor: 'white',
       shadowColor: "#000",
-      shadowOffset: {
-        width: 0,
-        height: 2,
-      },
+      shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.25,
       shadowRadius: 3.84,
       elevation: 5,
+  },
+  // New Styles for the GPS Tracker
+  userMarkerContainer: {
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+  },
+  userMarkerDot: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: '#22d3ee', // Cyan
+      borderWidth: 3,
+      borderColor: 'white',
+      zIndex: 2,
+  },
+  userMarkerRing: {
+      position: 'absolute',
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: 'rgba(34, 211, 238, 0.3)', // Faded Cyan pulse
+      zIndex: 1,
   }
 });

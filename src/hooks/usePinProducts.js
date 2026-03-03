@@ -10,16 +10,25 @@ export default function usePinProducts(selectedPin) {
       return;
     }
 
+    // UPDATED SCHEMA: Removed the ".acf" nesting
+    const categoryId = selectedPin.category_connector_id;
+    const productId = selectedPin.connector_id;
+
     // Check if the pin has product connectors.
-    if (selectedPin.acf.category_connector_id || selectedPin.acf.connector_id) {
+    if (categoryId || productId) {
       const fetchProducts = async () => {
         setProductsState({ status: 'loading', data: [] });
         
-        const wooApiUrl = selectedPin.acf.category_connector_id
-          ? `https://www.hyrosy.com/wp-json/wc/v3/products?category=${selectedPin.acf.category_connector_id}`
-          : `https://www.hyrosy.com/wp-json/wc/v3/products/${selectedPin.acf.connector_id}`;
+        const wooApiUrl = categoryId
+          ? `https://www.hyrosy.com/wp-json/wc/v3/products?category=${categoryId}`
+          : `https://www.hyrosy.com/wp-json/wc/v3/products/${productId}`;
         
-        const authString = btoa(`${process.env.NEXT_PUBLIC_WOOCOMMERCE_KEY}:${process.env.NEXT_PUBLIC_WOOCOMMERCE_SECRET}`);
+        // EXPO UPDATE: Make sure your .env file uses EXPO_PUBLIC_ prefix for mobile!
+        // We check for both to ensure it works on Web and Mobile during the transition.
+        const key = process.env.EXPO_PUBLIC_WOOCOMMERCE_KEY || process.env.NEXT_PUBLIC_WOOCOMMERCE_KEY;
+        const secret = process.env.EXPO_PUBLIC_WOOCOMMERCE_SECRET || process.env.NEXT_PUBLIC_WOOCOMMERCE_SECRET;
+        
+        const authString = btoa(`${key}:${secret}`);
         
         try {
           const response = await fetch(wooApiUrl, { headers: { 'Authorization': `Basic ${authString}` } });

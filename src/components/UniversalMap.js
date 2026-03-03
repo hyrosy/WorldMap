@@ -1,9 +1,9 @@
 import React from 'react';
-// It is safe to import Web logic here because this file ONLY runs on web
-import WebMapLogic from './WebMapLogic';
+// Import the Web Mapbox GL component we perfected earlier
+import Map from './Map';
 
 export default function UniversalMap(props) {
-  return (
+    return (
     <div style={{ height: '100%', width: '100%' }}>
        {/* Pass the city prop to initialize the logic */}
        <WebMapLogic initialCityId={props.city} />

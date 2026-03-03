@@ -1,109 +1,148 @@
-'use client';
-
+import React from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Image, Modal, SafeAreaView } from 'react-native';
 import { useCart } from "@/context/CartContext";
-import { Button } from "@/components/ui/button";
-import Image from "next/image";
-import Link from 'next/link';
-import { Trash2, ShoppingBag, Calendar, Clock, User } from "lucide-react"; // Added ShoppingBag for empty state
-import clsx from 'clsx';
+import { useRouter } from 'expo-router';
+import { Trash2, ShoppingBag, Calendar, Clock, User, X } from "lucide-react-native";
 import { format } from 'date-fns';
-
 
 const CartPanel = () => {
   const { isCartOpen, closeCart, cartItems, removeFromCart, updateQuantity, total } = useCart();
+  const router = useRouter();
 
-  const panelClasses = clsx(
-    'fixed top-0 left-0 w-96 h-full bg-black/80 backdrop-blur-md text-white shadow-2xl z-[1001] flex flex-col transition-transform duration-500 ease-in-out',
-    isCartOpen ? 'translate-x-0' : '-translate-x-full'
-  );
+  const handleCheckout = () => {
+      closeCart();
+      router.push('/checkout');
+  };
 
   return (
-    <div className={panelClasses}>
-      {/* Panel Header */}
-      <div className="flex justify-between items-center p-4 bg-black/30 border-b border-gray-700">
-        <h2 className="text-xl font-bold">Your Itinerary</h2>
-        <button onClick={closeCart} className="text-3xl">&times;</button>
-      </div>
+    <Modal
+        visible={isCartOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeCart}
+    >
+      {/* Background Overlay */}
+      <View className="flex-1 justify-end bg-black/70 flex-row">
+        
+        {/* Clickable transparent area to close */}
+        <TouchableOpacity className="flex-1" onPress={closeCart} />
 
-      {cartItems.length > 0 ? (
-        <>
-          {/* Cart Items List */}
-          <div className="flex-1 overflow-y-auto p-4 divide-y divide-gray-700">
-            {cartItems.map((item) => (
-              <div key={item.id} className="flex items-start gap-4 py-4">
-                <div className="relative h-16 w-16 rounded-md overflow-hidden border border-gray-600 flex-shrink-0">
-                   <Image
-                    src={item.images?.[0]?.src || '/placeholder.png'}
-                    alt={item.name}
-                    fill
-                    className="object-cover"
-                  />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-white">{item.name}</h3>
-                  <p className="text-sm text-gray-400">${item.price}</p>
-                  
-                  {/* --- THIS IS THE NEW DISPLAY LOGIC --- */}
-                  <div className="text-xs text-gray-400 mt-2 space-y-1">
-                    {item.date && (
-                        <p className="flex items-center"><Calendar className="w-3 h-3 mr-1.5"/> {format(new Date(item.date), 'PPP')}</p>
-                    )}
-                    {item.time && (
-                        <p className="flex items-center"><Clock className="w-3 h-3 mr-1.5"/> {item.time}</p>
-                    )}
-                     <p className="flex items-center"><User className="w-3 h-3 mr-1.5"/> {item.quantity} Participant(s)</p>
-                  </div>
-                  
-                  <div className="flex items-center gap-1 mt-2 border border-gray-600 rounded-md w-fit bg-white/5">
-                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="h-7 w-7 text-gray-300 hover:bg-white/10 rounded-l-md">-</button>
-                    <span className="text-sm w-5 text-center">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="h-7 w-7 text-gray-300 hover:bg-white/10 rounded-r-md">+</button>
-                  </div>
+        {/* Slide-in Panel (Takes up full height on mobile, constrained width) */}
+        <SafeAreaView className="w-[85%] max-w-sm h-full bg-gray-900 shadow-2xl flex-col border-l border-gray-800 pt-10">
+          
+          {/* Panel Header */}
+          <View className="flex-row justify-between items-center p-5 bg-black border-b border-gray-800">
+            <Text className="text-xl font-bold text-white tracking-wide">Your Itinerary</Text>
+            <TouchableOpacity onPress={closeCart} className="p-2 bg-gray-800 rounded-full">
+                <X size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
 
+          {cartItems.length > 0 ? (
+            <>
+              {/* Cart Items List */}
+              <ScrollView className="flex-1 px-5" showsVerticalScrollIndicator={false}>
+                {cartItems.map((item) => (
+                  <View key={item.id} className="flex-row items-start gap-4 py-5 border-b border-gray-800">
+                    
+                    {/* Item Image */}
+                    <View className="h-20 w-20 rounded-xl overflow-hidden bg-gray-800 border border-gray-700">
+                       <Image
+                        source={{ uri: item.images?.[0]?.src || 'https://placehold.co/100' }}
+                        className="w-full h-full"
+                        resizeMode="cover"
+                      />
+                    </View>
 
-                </div>
-                <button className="text-gray-500 hover:text-red-500 transition-colors" onClick={() => removeFromCart(item.id)}>
-                  
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
+                    {/* Item Details */}
+                    <View className="flex-1 flex-col">
+                      <View className="flex-row justify-between items-start mb-1">
+                          <Text className="text-base font-bold text-white leading-tight flex-1 mr-2">{item.name}</Text>
+                          <TouchableOpacity className="p-1" onPress={() => removeFromCart(item.id)}>
+                            <Trash2 size={18} color="#ef4444" />
+                          </TouchableOpacity>
+                      </View>
+                      
+                      {/* Formatted Price */}
+                      <Text className="text-sm font-black text-cyan-400 mb-2">€{item.price}</Text>
+                      
+                      {/* Booking Details */}
+                      <View className="space-y-1.5 mb-3">
+                        {item.date && (
+                            <View className="flex-row items-center">
+                                <Calendar size={14} color="#9ca3af" className="mr-2"/> 
+                                <Text className="text-xs text-gray-400 font-medium">{format(new Date(item.date), 'PPP')}</Text>
+                            </View>
+                        )}
+                        {item.time && (
+                            <View className="flex-row items-center">
+                                <Clock size={14} color="#9ca3af" className="mr-2"/> 
+                                <Text className="text-xs text-gray-400 font-medium">{item.time}</Text>
+                            </View>
+                        )}
+                         <View className="flex-row items-center">
+                             <User size={14} color="#9ca3af" className="mr-2"/> 
+                             <Text className="text-xs text-gray-400 font-medium">{item.quantity} Participant(s)</Text>
+                         </View>
+                      </View>
+                      
+                      {/* Quantity Controls */}
+                      <View className="flex-row items-center bg-gray-800 border border-gray-700 rounded-lg self-start">
+                        <TouchableOpacity 
+                            onPress={() => updateQuantity(item.id, item.quantity - 1)} 
+                            className="h-8 w-8 items-center justify-center border-r border-gray-700 active:bg-gray-700"
+                        >
+                            <Text className="text-gray-300 font-bold">-</Text>
+                        </TouchableOpacity>
+                        <Text className="text-sm font-bold text-white w-8 text-center">{item.quantity}</Text>
+                        <TouchableOpacity 
+                            onPress={() => updateQuantity(item.id, item.quantity + 1)} 
+                            className="h-8 w-8 items-center justify-center border-l border-gray-700 active:bg-gray-700"
+                        >
+                            <Text className="text-gray-300 font-bold">+</Text>
+                        </TouchableOpacity>
+                      </View>
 
-          {/* Panel Footer */}
-          <div className="p-4 bg-black/30 border-t border-gray-700 mt-auto">
-              <div className="w-full space-y-4">
-                  <div className="flex justify-between font-semibold text-lg">
-                      <span>Total</span>
-                      <span>${total}</span>
-                  </div>
-                  <Link href="/checkout" passHref>
-                    <Button 
-                      className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold" 
-                      size="lg" 
-                      onClick={closeCart}
-                    >
-                      Proceed to Checkout
-                    </Button>
-                  </Link>
-              </div>
-          </div>
-        </>
-      ) : (
-        // Empty Cart State
-        <div className="flex flex-col items-center justify-center h-full text-center">
-          <ShoppingBag className="h-16 w-16 text-gray-600 mb-4" />
-          <p className="text-gray-400">Your itinerary is empty.</p>
-          <Button 
-            variant="outline" 
-            className="mt-4 bg-transparent border-gray-500 hover:bg-gray-700 hover:text-white" 
-            onClick={closeCart}
-          >
-            Keep Exploring
-          </Button>
-        </div>
-      )}
-    </div>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              {/* Panel Footer */}
+              <View className="p-5 bg-black border-t border-gray-800 mt-auto pb-8">
+                  <View className="flex-row justify-between items-center mb-5">
+                      <Text className="font-bold text-gray-400 uppercase tracking-widest text-sm">Total</Text>
+                      <Text className="font-black text-2xl text-cyan-400">€{total}</Text>
+                  </View>
+                  <TouchableOpacity 
+                    className="w-full h-14 bg-[#d3bc8e] active:bg-[#c2a977] rounded-xl flex-row items-center justify-center shadow-lg"
+                    onPress={handleCheckout}
+                  >
+                    <Text className="text-black font-bold text-lg">Proceed to Checkout</Text>
+                  </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            // Empty Cart State
+            <View className="flex-1 items-center justify-center p-6">
+              <View className="bg-gray-800 p-6 rounded-full mb-6 border border-gray-700 shadow-sm">
+                  <ShoppingBag size={48} color="#6b7280" />
+              </View>
+              <Text className="text-xl font-bold text-white mb-2">Itinerary is empty</Text>
+              <Text className="text-gray-400 text-center mb-8">You haven't added any experiences to your journey yet.</Text>
+              
+              <TouchableOpacity 
+                className="bg-gray-800 border border-gray-700 h-12 px-6 rounded-full items-center justify-center active:bg-gray-700"
+                onPress={closeCart}
+              >
+                <Text className="text-white font-bold">Keep Exploring</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+        </SafeAreaView>
+      </View>
+    </Modal>
   );
 };
 

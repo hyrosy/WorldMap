@@ -1,22 +1,49 @@
 import { useState, useEffect } from 'react';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function useQuests(mapRef, setSelectedPin) {
   const [quests, setQuests] = useState([]);
   const [activeQuest, setActiveQuest] = useState(null);
   const [questStepIndex, setQuestStepIndex] = useState(0);
 
-  // State for tracking explored steps with localStorage persistence
-  const [exploredSteps, setExploredSteps] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem('exploredSteps');
-      if (saved) {
-        return new Set(JSON.parse(saved));
-      }
-    }
-    return new Set();
-  });
+  // We start with an empty set and load from AsyncStorage on mount
+  const [exploredSteps, setExploredSteps] = useState(new Set());
+  const [isStorageLoaded, setIsStorageLoaded] = useState(false);
 
-  // Effect to fetch quests once on initial load
+  // 1. Asynchronously load saved progress on startup
+  useEffect(() => {
+    const loadExploredSteps = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('exploredSteps');
+        if (saved) {
+          setExploredSteps(new Set(JSON.parse(saved)));
+        }
+      } catch (error) {
+        console.error('Failed to load explored steps:', error);
+      } finally {
+        setIsStorageLoaded(true);
+      }
+    };
+    loadExploredSteps();
+  }, []);
+
+  // 2. Save to AsyncStorage whenever progress changes
+  useEffect(() => {
+    if (!isStorageLoaded) return; // Prevent overwriting with empty state before loading finishes
+    
+    const saveExploredSteps = async () => {
+      try {
+        const stepsArray = Array.from(exploredSteps);
+        await AsyncStorage.setItem('exploredSteps', JSON.stringify(stepsArray));
+      } catch (error) {
+        console.error('Failed to save explored steps:', error);
+      }
+    };
+    saveExploredSteps();
+  }, [exploredSteps, isStorageLoaded]);
+
+  // Fetch Official Quests (Leaving this mapped to WP until you migrate Quests to Supabase)
   useEffect(() => {
     const fetchQuests = async () => {
       const apiUrl = 'https://data.hyrosy.com/wp-json/wp/v2/quests?acf_format=standard';
@@ -32,14 +59,6 @@ export default function useQuests(mapRef, setSelectedPin) {
     fetchQuests();
   }, []);
 
-  // Effect to save explored steps to localStorage whenever they change
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stepsArray = Array.from(exploredSteps);
-      window.localStorage.setItem('exploredSteps', JSON.stringify(stepsArray));
-    }
-  }, [exploredSteps]);
-
   const handleQuestSelect = (quest) => {
     setActiveQuest(quest);
     setQuestStepIndex(0); // Reset to the first step when a new quest is selected
@@ -49,16 +68,40 @@ export default function useQuests(mapRef, setSelectedPin) {
     setQuestStepIndex(index);
     setSelectedPin(step); // Show the pin details in the modal
 
-    // Fly to the pin's location on the map
     if (step && mapRef.current) {
-      const [lat, lng] = step.acf.gps_coordinates.split(',').map(s => parseFloat(s.trim()));
-      mapRef.current.flyTo({
-        center: [lng, lat],
-        zoom: 16,
-        pitch: 60,
-        speed: 1.0,
-        essential: true,
-      });
+      // 3. Handle both Supabase (lat/lng) and Old WP (acf.gps_coordinates) data shapes
+      let lat, lng;
+      
+      if (step.lat !== undefined && step.lng !== undefined) {
+          lat = parseFloat(step.lat);
+          lng = parseFloat(step.lng);
+      } else if (step.acf && step.acf.gps_coordinates) {
+          const coords = step.acf.gps_coordinates.split(',').map(s => parseFloat(s.trim()));
+          lat = coords[0];
+          lng = coords[1];
+      }
+
+      // 4. Universal Camera Movement
+      if (lat !== undefined && lng !== undefined) {
+        if (Platform.OS === 'web') {
+          // Web Mapbox GL
+          mapRef.current.flyTo({
+            center: [lng, lat],
+            zoom: 16,
+            pitch: 60,
+            speed: 1.0,
+            essential: true,
+          });
+        } else {
+          // Native Mapbox (@rnmapbox/maps)
+          mapRef.current.setCamera({
+            centerCoordinate: [lng, lat],
+            zoomLevel: 16,
+            pitch: 60,
+            animationDuration: 1000,
+          });
+        }
+      }
     }
   };
 

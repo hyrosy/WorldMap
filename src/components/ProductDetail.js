@@ -1,22 +1,20 @@
-'use client';
-
 import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
-import { Button } from "@/components/ui/button";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DayPicker } from 'react-day-picker';
-import 'react-day-picker/dist/style.css';
-import { Calendar, Clock, User, ShoppingCart, CheckCircle } from 'lucide-react';
-import { cn } from "@/lib/utils";
+import { View, Text, ScrollView, TouchableOpacity, Image, Platform, Dimensions } from 'react-native';
+import { Calendar, Clock, User, ShoppingCart, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+// Helper to strip HTML from product descriptions
+const stripHtml = (html) => html ? html.replace(/<[^>]*>?/gm, '').trim() : '';
+const { width: screenWidth } = Dimensions.get('window');
 
 const ProductDetail = ({ product, onAddToCart, onBack }) => {
     // State for booking options
     const [selectedDate, setSelectedDate] = useState(new Date());
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const [selectedTime, setSelectedTime] = useState('');
     const [participants, setParticipants] = useState(1);
     const [isAdded, setIsAdded] = useState(false);
+    const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
 
     // Reset state when a new product is viewed
     useEffect(() => {
@@ -24,6 +22,7 @@ const ProductDetail = ({ product, onAddToCart, onBack }) => {
         setSelectedTime('');
         setParticipants(1);
         setIsAdded(false);
+        setIsDescriptionOpen(false);
     }, [product]);
 
     if (!product) return null;
@@ -41,140 +40,187 @@ const ProductDetail = ({ product, onAddToCart, onBack }) => {
         setTimeout(() => setIsAdded(false), 2000);
     };
 
+    const handleDateChange = (event, date) => {
+        if (Platform.OS === 'android') {
+            setShowDatePicker(false);
+        }
+        if (date) {
+            setSelectedDate(date);
+        }
+    };
+
+    // Because WooCommerce data structures can vary, we safely access metadata
+    // In a fully migrated Supabase setup, this would be flatter, but we'll support both for now.
     const timeSlots = product.acf?.available_time_slots?.split(',').map(t => t.trim()) || [];
-    const isBookable = product.acf?.enable_booking;
-    const totalPrice = (parseFloat(product.price) * (isBookable && product.acf?.requires_participants ? participants : 1)).toFixed(2);
+    const isBookable = product.acf?.enable_booking === true || product.acf?.enable_booking === 'true';
+    const requiresParticipants = product.acf?.requires_participants === true || product.acf?.requires_participants === 'true';
+    
+    // Parse price safely
+    const basePrice = parseFloat(product.price || 0);
+    const totalPrice = (basePrice * (isBookable && requiresParticipants ? participants : 1)).toFixed(2);
 
     return (
-        <div className="flex flex-col h-full">
-            {/* --- HEADER: GALLERY, TITLE, PRICE --- */}
-            <Carousel className="w-full max-w-sm mx-auto mb-4">
-              <CarouselContent>
-                {product.images.map((image, index) => (
-                  <CarouselItem key={index}>
-                    <div className="p-1">
-                      <div className="relative aspect-square w-full bg-gray-100 rounded-lg overflow-hidden">
-                        <Image
-                          src={image.src}
-                          alt={image.alt || `Product image ${index + 1}`}
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
-                    </div>
-                  </CarouselItem>
-                ))}
-              </CarouselContent>
-              <CarouselPrevious />
-              <CarouselNext />
-            </Carousel>
+        <View className="flex-1 flex-col bg-gray-900 h-full p-4">
             
-            <h3 className="text-2xl font-bold">{product.name}</h3>
-            <p className="text-3xl font-bold text-right my-2">${totalPrice}</p>
-            <div 
-              className="text-sm text-muted-foreground" 
-              dangerouslySetInnerHTML={{ __html: product.short_description }} 
-            />
+            {/* --- HEADER: GALLERY, TITLE, PRICE --- */}
+            <View className="mb-4">
+                {product.images && product.images.length > 0 ? (
+                    <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} className="w-full h-64 bg-gray-800 rounded-xl overflow-hidden mb-4">
+                        {product.images.map((image, index) => (
+                            <Image 
+                                key={index}
+                                source={{ uri: image.src }}
+                                style={{ width: screenWidth - 32, height: 256 }} // Screen width minus padding
+                                resizeMode="cover"
+                            />
+                        ))}
+                    </ScrollView>
+                ) : (
+                    <View className="w-full h-64 bg-gray-800 rounded-xl items-center justify-center mb-4">
+                         <Text className="text-gray-500">No Image Available</Text>
+                    </View>
+                )}
+                
+                <Text className="text-2xl font-bold text-white leading-tight">{product.name}</Text>
+                
+                <View className="flex-row justify-between items-center mt-2 border-b border-gray-800 pb-4">
+                    <Text className="text-gray-400 text-sm flex-1 mr-4" numberOfLines={2}>
+                        {stripHtml(product.short_description)}
+                    </Text>
+                    <Text className="text-3xl font-black text-cyan-400">€{totalPrice}</Text>
+                </View>
+            </View>
 
             {/* --- MAIN CONTENT (SCROLLABLE) --- */}
-            <div className="flex-grow overflow-y-auto pr-2 space-y-4 mt-4">
+            <ScrollView className="flex-1" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
                 {isBookable ? (
-                    <>
+                    <View className="space-y-4 mb-4">
+                        
                         {/* --- DATE PICKER --- */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="text-base font-semibold flex items-center">
-                                    <Calendar className="w-4 h-4 mr-2 text-primary"/>
-                                    Select Date
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="flex justify-center">
-                                <DayPicker
-                                    mode="single" selected={selectedDate} onSelect={setSelectedDate}
-                                    classNames={{
-                                        head_cell: 'text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]',
-                                        day_selected: 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground',
-                                        day_today: 'bg-accent text-accent-foreground',
-                                        day_outside: 'text-muted-foreground opacity-50',
-                                    }}
-                                    disabled={{ before: new Date() }}
+                        <View className="bg-gray-800 p-4 rounded-xl border border-gray-700">
+                            <View className="flex-row items-center mb-3">
+                                <Calendar size={18} color="#22d3ee" className="mr-2"/>
+                                <Text className="font-bold text-white text-base">Select Date</Text>
+                            </View>
+                            
+                            {/* Universal Date Picker trigger */}
+                            <TouchableOpacity 
+                                onPress={() => setShowDatePicker(true)}
+                                className="w-full bg-gray-900 border border-gray-600 rounded-lg p-4 items-center"
+                            >
+                                <Text className="text-white font-medium">{selectedDate.toDateString()}</Text>
+                            </TouchableOpacity>
+
+                            {showDatePicker && (
+                                <DateTimePicker
+                                    value={selectedDate}
+                                    mode="date"
+                                    display="default"
+                                    minimumDate={new Date()}
+                                    onChange={handleDateChange}
                                 />
-                            </CardContent>
-                        </Card>
+                            )}
+                        </View>
 
-                        {/* --- TIME & PARTICIPANTS --- */}
-                        <div className="grid grid-cols-2 gap-4">
-                            {product.acf.booking_type === 'date_time' && timeSlots.length > 0 && (
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="text-base font-semibold flex items-center">
-                                            <Clock className="w-4 h-4 mr-2 text-primary"/>
-                                            Select Time
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="grid grid-cols-2 gap-2">
+                        {/* --- TIME & PARTICIPANTS GRID --- */}
+                        <View className="flex-row gap-4">
+                            {/* Time Slots */}
+                            {product.acf?.booking_type === 'date_time' && timeSlots.length > 0 && (
+                                <View className="flex-1 bg-gray-800 p-4 rounded-xl border border-gray-700">
+                                    <View className="flex-row items-center mb-3">
+                                        <Clock size={18} color="#22d3ee" className="mr-2"/>
+                                        <Text className="font-bold text-white text-base">Time</Text>
+                                    </View>
+                                    <View className="flex-row flex-wrap gap-2">
                                         {timeSlots.map(time => (
-                                            <Button 
+                                            <TouchableOpacity 
                                                 key={time} 
-                                                onClick={() => setSelectedTime(time)}
-                                                variant={selectedTime === time ? 'default' : 'outline'}
-                                                className="rounded-full"
+                                                onPress={() => setSelectedTime(time)}
+                                                className={`px-3 py-2 rounded-lg border ${selectedTime === time ? 'bg-cyan-500 border-cyan-400' : 'bg-gray-900 border-gray-600'}`}
                                             >
-                                                {time}
-                                            </Button>
+                                                <Text className={selectedTime === time ? 'text-white font-bold text-sm' : 'text-gray-300 font-medium text-sm'}>
+                                                    {time}
+                                                </Text>
+                                            </TouchableOpacity>
                                         ))}
-                                    </CardContent>
-                                </Card>
+                                    </View>
+                                </View>
                             )}
 
-                            {product.acf.requires_participants && (
-                                 <Card>
-                                    <CardHeader>
-                                        <CardTitle className="text-base font-semibold flex items-center">
-                                            <User className="w-4 h-4 mr-2 text-primary"/>
-                                            Participants
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="flex items-center justify-center gap-4">
-                                        <Button size="icon" variant="outline" className="rounded-full" onClick={() => setParticipants(p => Math.max(1, p - 1))}>-</Button>
-                                        <span className="font-bold text-lg w-8 text-center">{participants}</span>
-                                        <Button size="icon" variant="outline" className="rounded-full" onClick={() => setParticipants(p => p + 1)}>+</Button>
-                                    </CardContent>
-                                </Card>
+                            {/* Participants */}
+                            {requiresParticipants && (
+                                <View className="flex-1 bg-gray-800 p-4 rounded-xl border border-gray-700">
+                                    <View className="flex-row items-center mb-3">
+                                        <User size={18} color="#22d3ee" className="mr-2"/>
+                                        <Text className="font-bold text-white text-base">Guests</Text>
+                                    </View>
+                                    <View className="flex-row items-center justify-between bg-gray-900 border border-gray-600 rounded-lg p-1">
+                                        <TouchableOpacity 
+                                            onPress={() => setParticipants(p => Math.max(1, p - 1))}
+                                            className="w-10 h-10 items-center justify-center bg-gray-800 rounded-md"
+                                        >
+                                            <Text className="text-white font-bold text-xl">-</Text>
+                                        </TouchableOpacity>
+                                        
+                                        <Text className="text-white font-bold text-lg mx-2">{participants}</Text>
+                                        
+                                        <TouchableOpacity 
+                                            onPress={() => setParticipants(p => p + 1)}
+                                            className="w-10 h-10 items-center justify-center bg-gray-800 rounded-md"
+                                        >
+                                            <Text className="text-white font-bold text-xl">+</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                             )}
-                        </div>
-                    </>
+                        </View>
+                    </View>
                 ) : null}
 
-                {/* --- ACCORDION FOR FULL DESCRIPTION --- */}
-                <Accordion type="single" collapsible className="w-full">
-                  <AccordionItem value="item-1">
-                    <AccordionTrigger>Full Description</AccordionTrigger>
-                    <AccordionContent>
-                      <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: product.description }} />
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-            </div>
+                {/* --- CUSTOM ACCORDION FOR FULL DESCRIPTION --- */}
+                {product.description && (
+                    <View className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden mt-2">
+                        <TouchableOpacity 
+                            onPress={() => setIsDescriptionOpen(!isDescriptionOpen)}
+                            className="flex-row justify-between items-center p-4 active:bg-gray-700"
+                        >
+                            <Text className="font-bold text-white text-base">Full Details</Text>
+                            {isDescriptionOpen ? <ChevronUp size={20} color="#9ca3af" /> : <ChevronDown size={20} color="#9ca3af" />}
+                        </TouchableOpacity>
+                        
+                        {isDescriptionOpen && (
+                            <View className="p-4 border-t border-gray-700 bg-gray-900/50">
+                                <Text className="text-gray-300 leading-6 text-sm">
+                                    {stripHtml(product.description)}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                )}
+            </ScrollView>
 
-            {/* --- FOOTER --- */}
-            <div className="mt-auto flex gap-4 border-t pt-4 flex-shrink-0">
-                <Button variant="outline" onClick={onBack} className="w-1/3 rounded-full h-12">
-                  Back
-                </Button>
-                <Button 
-                    onClick={handleAddToCartClick} 
-                    disabled={isAdded}
-                    className={cn(
-                        "w-2/3 rounded-full h-12 text-base font-semibold transition-colors bg-[#d3bc8e] text-black hover:bg-[#c8b185]",
-                        { "bg-green-600 hover:bg-green-700 text-white": isAdded }
-                    )}
+            {/* --- FOOTER ACTION BAR --- */}
+            <View className="flex-row gap-3 pt-4 border-t border-gray-800 bg-gray-900 mt-auto">
+                <TouchableOpacity 
+                    onPress={onBack} 
+                    className="flex-1 bg-gray-800 border border-gray-700 h-14 rounded-xl items-center justify-center active:bg-gray-700"
                 >
-                    {isAdded ? <CheckCircle className="h-5 w-5" /> : <ShoppingCart className="h-5 w-5" />}
-                    <span className="ml-2">{isAdded ? 'Added!' : 'Add to Itinerary'}</span>
-                </Button>
-            </div>
-        </div>
+                    <Text className="text-white font-bold text-base">Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                    onPress={handleAddToCartClick} 
+                    disabled={isAdded}
+                    className={`flex-[2] h-14 rounded-xl flex-row items-center justify-center shadow-lg transition-colors ${isAdded ? 'bg-green-500' : 'bg-[#d3bc8e] active:bg-[#c2a977]'}`}
+                >
+                    {isAdded ? <CheckCircle size={20} color="white" /> : <ShoppingCart size={20} color="black" />}
+                    <Text className={`font-bold text-base ml-2 ${isAdded ? 'text-white' : 'text-black'}`}>
+                        {isAdded ? 'Added to Cart!' : 'Add to Experience'}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+
+        </View>
     );
 };
 

@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Platform } from 'react-native'; // <--- Magic import
+import { Platform } from 'react-native';
+import * as AuthSession from 'expo-auth-session'; // <-- FIXED: Added missing import
 import { supabase as supabaseWeb } from '../lib/supabaseClient'; 
 
-// We need to conditionally import the mobile client to avoid web errors
+// Conditionally import the mobile client to avoid web errors
 let supabaseMobile;
 if (Platform.OS !== 'web') {
   supabaseMobile = require('../lib/supabaseMobile').supabase;
@@ -11,6 +12,7 @@ if (Platform.OS !== 'web') {
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
+  const [session, setSession] = useState(null); // <-- FIXED: Added session state
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,6 +24,7 @@ export function AuthProvider({ children }) {
     const checkUser = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
         setUser(session?.user ?? null);
       } catch (error) {
         console.error('Auth check error:', error);
@@ -34,12 +37,13 @@ export function AuthProvider({ children }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [supabase.auth]);
 
   const signInWithGoogle = async () => {
     try {
@@ -53,7 +57,7 @@ export function AuthProvider({ children }) {
       } else {
         // Mobile Google Auth using expo-auth-session
         const redirectUri = AuthSession.makeRedirectUri({
-          useProxy: true,
+          preferLocalhost: true, // <-- FIXED: useProxy is deprecated in modern Expo
         });
 
         const { data, error } = await supabase.auth.signInWithOAuth({
@@ -77,6 +81,7 @@ export function AuthProvider({ children }) {
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
+      setSession(null);
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
@@ -84,7 +89,8 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut }}>
+    // <-- FIXED: Added 'session' to the provided values so PinDetailsModal doesn't crash
+    <AuthContext.Provider value={{ session, user, loading, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );

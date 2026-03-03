@@ -11,6 +11,7 @@ import { MapPin, Search, Route, BookOpen, Crosshair, ArrowLeft } from 'lucide-re
 import StoryArchivePanel from '@/components/StoryArchivePanel';
 import mapboxgl from 'mapbox-gl'; 
 import WelcomeOverlay from '@/components/WelcomeOverlay';
+import { supabase } from '@/lib/supabaseClient'; // <-- ADDED: For fetching experience pins
 
 // Hooks
 import { usePwaInstall } from '@/hooks/usePwaInstall';
@@ -33,7 +34,6 @@ const CITY_DATA = {
 export default function WebMapLogic({ initialCityId }) {
     const router = useRouter();
     
-    // --- Initialize state with prop if available ---
     const [selectedCity, setSelectedCity] = useState(
         initialCityId && CITY_DATA[initialCityId] 
         ? CITY_DATA[initialCityId] 
@@ -43,20 +43,21 @@ export default function WebMapLogic({ initialCityId }) {
     const [viewingExperience, setViewingExperience] = useState(null);
     const { showIosInstallPopup, handleInstallClick, closeIosInstallPopup } = usePwaInstall();
     
+    // UPDATED: Using plain text categories instead of WordPress IDs
     const categoryIconMap = {
-        39  : 'air-balloon.png',
-        37  : 'camel-ride.png',
-        38  : 'quad-bike.png', 
-        44  : 'food.png',   
-        35  : 'monuments.png',  
-        45  : 'shopping.png',   
-        40  : 'tales.png',  
-        42  : 'a-craftsman.png',    
-        33  : 'workshops.png',  
-        34  : 'cooking-class.png',  
-        47  : 'pottery-class.png',  
-        48  : 'artisan-class.png',  
-        36  : 'adventure1.png', 
+        'Activities': 'adventure1.png',
+        'Experiences': 'adventure1.png',
+        'Restaurants': 'food.png',
+        'Food & Cooking': 'food.png',
+        'Monuments': 'monuments.png',
+        'Books & Guides': 'monuments.png',
+        'Shops': 'shopping.png',
+        'Fashion & Accessories': 'shopping.png',
+        'Home Decor': 'shopping.png',
+        'Hotels': 'building.png',
+        'Home & Lifestyle': 'building.png',
+        'Health & Medicine': 'a-craftsman.png', // Example fallback
+        'Transport': 'quad-bike.png',
     };
 
     const [isFilterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -69,38 +70,31 @@ export default function WebMapLogic({ initialCityId }) {
     const mapRef = useRef(null);
     const { addToCart } = useCart();
 
+    // UPDATED: Now perfectly queries your Supabase database!
     const handleViewExperience = async (route) => {
-        if (!route || !route.stops || route.stops.length === 0) {
+        if (!route || !route.user_map_pins || route.user_map_pins.length === 0) {
             setViewingExperience(null);
             return;
         }
         setQuestPanelOpen(false); 
 
-        const stopIds = route.stops.join(',');
-        const apiUrl = `https://data.hyrosy.com/wp-json/wp/v2/locations?acf_format=standard&include=${stopIds}&orderby=include`;
-        
         try {
-            const response = await fetch(apiUrl);
-            if (!response.ok) throw new Error('Failed to fetch experience stops');
-            const fullStopsData = await response.json();
+            const locationIds = route.user_map_pins.map(p => p.location_id);
 
-            const orderedStops = route.stops.map(stopId => 
-                fullStopsData.find(stop => stop.id === stopId)
-            ).filter(Boolean);
+            const { data: locations, error } = await supabase
+                .from('locations')
+                .select('*')
+                .in('id', locationIds);
 
-            const experiencePins = orderedStops.map(loc => {
-                if (!loc.acf || !loc.acf.gps_coordinates || typeof loc.acf.gps_coordinates !== 'string') {
-                    return null;
-                }
-                const coords = loc.acf.gps_coordinates.match(/-?\d+\.\d+/g);
-                if (!coords || coords.length < 2) return null;
-                const lat = parseFloat(coords[0]);
-                const lng = parseFloat(coords[1]);
-                if (isNaN(lat) || isNaN(lng)) return null;
-                return { ...loc, id: loc.id, lat, lng };
-            }).filter(Boolean);
+            if (error) throw error;
 
-            setViewingExperience(experiencePins);
+            // Order them according to how the user arranged them
+            const orderedPins = route.user_map_pins
+                .sort((a, b) => a.order_index - b.order_index)
+                .map(pinRecord => locations.find(loc => loc.id === pinRecord.location_id))
+                .filter(Boolean); // Filters out any undefined/null values
+
+            setViewingExperience(orderedPins);
 
         } catch (error) {
             console.error("Error fetching experience details:", error);
@@ -118,7 +112,9 @@ export default function WebMapLogic({ initialCityId }) {
 
     const { quests, activeQuest, questStepIndex, exploredSteps, handleQuestSelect, handleQuestStepSelect, handleToggleStepExplored } = useQuests(mapRef, setSelectedPin);
     const modalProducts = usePinProducts(selectedPin);
-    const { handleGoToUserLocation, handleGetDirections } = useMapInteraction(mapRef);
+    
+    // UPDATED: Grabbed the new tracking variables from the hook
+    const { handleGoToUserLocation, handleGetDirections, userLocation, directionsRoute } = useMapInteraction(mapRef);
 
     const [isQuestPanelOpen, setQuestPanelOpen] = useState(false);
     const [isStoryArchiveOpen, setStoryArchiveOpen] = useState(false); 
@@ -176,6 +172,7 @@ export default function WebMapLogic({ initialCityId }) {
         setSelectedCity(null);
     };
 
+    // UPDATED: Relies on Supabase lat/lng structure
     const handleSearchResultSelect = (pin) => {
         if (mapRef.current && pin.lat && pin.lng) {
             const map = mapRef.current;
@@ -208,6 +205,8 @@ export default function WebMapLogic({ initialCityId }) {
                     setMapLoaded(true);
                 }}
                 experienceRoute={viewingExperience}
+                userLocation={userLocation}        // <-- PASSED NEW PROP
+                directionsRoute={directionsRoute}  // <-- PASSED NEW PROP
             />
         </Suspense>
         
@@ -228,7 +227,6 @@ export default function WebMapLogic({ initialCityId }) {
 
             {isAppReady && (
               <>
-            {/* Back to Dashboard Button (New for Universal App) */}
             <div className="absolute top-4 left-4 pointer-events-auto">
                  <Button 
                     variant="secondary" 

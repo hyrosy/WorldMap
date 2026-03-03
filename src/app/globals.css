@@ -1,15 +1,20 @@
 @import "tailwindcss";
 @import 'mapbox-gl/dist/mapbox-gl.css';
 
-/* Add these styles to the bottom of your globals.css file */
-html, body, #__next {
+/* Ensure the map takes up the full screen on Expo Web */
+html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
 }
 
+/* NOTE: These marker classes are STILL REQUIRED! 
+  Even though mobile uses <View> for markers, the Web version (Mapbox GL JS) 
+  still injects raw <div> elements into the DOM, which rely on these exact classes.
+*/
+
 .user-marker {
-  background-image: url('/user-marker.png');
+  background-image: url('/user-marker.png'); /* Ensure this image is in your public/assets folder */
   background-size: cover;
   width: 40px;
   height: 40px;
@@ -31,36 +36,6 @@ html, body, #__next {
 }
 
 .custom-marker img {
-  width: 16px;  /* This will correctly size your icon */
+  width: 16px;
   height: 16px;
-}
-
-/* --- ADD THE NEW FLOATING ANIMATION --- */
-@keyframes float {
-  0% {
-    transform: translateY(0px);
-  }
-  10% {
-    transform: translateY(-5px); /* Moves the balloon up */
-  }
-  20% {
-    transform: translateY(+5px); /* Moves the balloon up */
-  }
-  40% {
-    transform: translateY(-5px); /* Moves the balloon up */
-  }
-  60% {
-    transform: translateY(+5px); /* Moves the balloon up */
-  }
-  80% {
-    transform: translateY(-5px); /* Moves the balloon up */
-  }
-  100% {
-    transform: translateX(150px);
-  }
-}
-
-.animate-float {
-  /* This makes the animation loop smoothly forever */
-  animation: float 5s ease-in-out infinite;
 }

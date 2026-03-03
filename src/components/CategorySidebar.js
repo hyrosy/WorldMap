@@ -1,39 +1,53 @@
-'use client';
-
-import clsx from 'clsx';
-import { Tag } from 'lucide-react';
+import React from 'react';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { Tag } from 'lucide-react-native';
 
 const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => {
   return (
-    <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 h-full">
-      <h2 className="text-lg font-semibold text-white mb-4 flex items-center">
-        <Tag className="w-5 h-5 mr-2 text-cyan-400" />
-        Categories
-      </h2>
-      <div className="space-y-1">
-        <button
-          onClick={() => onSelectCategory(null)}
-          className={clsx(
-            'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
-            !selectedCategory ? 'bg-blue-600 text-white font-semibold' : 'text-gray-300 hover:bg-white/10 hover:text-white'
-          )}
+    <View className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex-1 shadow-sm">
+      
+      {/* Sidebar Header */}
+      <View className="flex-row items-center mb-5 pb-4 border-b border-gray-800">
+        <Tag size={20} color="#22d3ee" className="mr-3" />
+        <Text className="text-lg font-bold text-white tracking-wide">Categories</Text>
+      </View>
+      
+      {/* Scrollable Category List */}
+      <ScrollView showsVerticalScrollIndicator={false} className="flex-1">
+        
+        {/* "All" Button */}
+        <TouchableOpacity
+          onPress={() => onSelectCategory(null)}
+          className={`w-full px-4 py-3.5 rounded-xl flex-row items-center mb-2 transition-colors ${
+            !selectedCategory 
+                ? 'bg-cyan-600 shadow-md' 
+                : 'bg-transparent active:bg-gray-800'
+          }`}
         >
-          All Experiences
-        </button>
-        {categories.map((category) => (
-          <button
+          <Text className={`text-sm ${!selectedCategory ? 'text-white font-black' : 'text-gray-400 font-semibold'}`}>
+            All Experiences
+          </Text>
+        </TouchableOpacity>
+
+        {/* Mapped Categories */}
+        {categories && categories.map((category) => (
+          <TouchableOpacity
             key={category.id}
-            onClick={() => onSelectCategory(category.id)}
-            className={clsx(
-              'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
-              selectedCategory === category.id ? 'bg-blue-600 text-white font-semibold' : 'text-gray-300 hover:bg-white/10 hover:text-white'
-            )}
+            onPress={() => onSelectCategory(category.id)}
+            className={`w-full px-4 py-3.5 rounded-xl flex-row items-center mb-2 transition-colors ${
+              selectedCategory === category.id 
+                ? 'bg-cyan-600 shadow-md' 
+                : 'bg-transparent active:bg-gray-800'
+            }`}
           >
-            {category.name}
-          </button>
+            <Text className={`text-sm ${selectedCategory === category.id ? 'text-white font-black' : 'text-gray-400 font-semibold'}`}>
+              {category.name}
+            </Text>
+          </TouchableOpacity>
         ))}
-      </div>
-    </div>
+        
+      </ScrollView>
+    </View>
   );
 };
 
