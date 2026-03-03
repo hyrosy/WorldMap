@@ -1,15 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // 1. Apply the NativeWind preset (Crucial for Mobile)
   presets: [require("nativewind/preset")],
-
   darkMode: "class",
-  
-  // 2. Scan all files in 'src' for classes
   content: [
     "./src/**/*.{js,jsx,ts,tsx}"
   ],
-
   theme: {
     container: {
       center: true,
@@ -19,45 +14,49 @@ module.exports = {
       },
     },
     extend: {
-    colors: {
-      'golden': '#d3bc8e',
-      // Provide hardcoded hex fallbacks for Mobile
-      border: Platform.OS === 'web' ? "hsl(var(--border))" : "#374151", 
-      background: Platform.OS === 'web' ? "hsl(var(--background))" : "#000000",
-      foreground: Platform.OS === 'web' ? "hsl(var(--foreground))" : "#ffffff",
-      primary: {
-        DEFAULT: Platform.OS === 'web' ? "hsl(var(--primary))" : "#22d3ee",
-        foreground: Platform.OS === 'web' ? "hsl(var(--primary-foreground))" : "#000000",
-      },
+      colors: {
+        'golden': '#d3bc8e',
+        
+        // Hardcoded Hex values for Universal compatibility (Dark Mode defaults)
+        border: "#374151",      // gray-700
+        input: "#374151",
+        ring: "#22d3ee",        // cyan-400
+        background: "#000000",  // black
+        foreground: "#ffffff",  // white
+        
+        primary: {
+          DEFAULT: "#22d3ee",   // cyan-400
+          foreground: "#000000",
+        },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+          DEFAULT: "#1f2937",   // gray-800
+          foreground: "#ffffff",
         },
         destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
+          DEFAULT: "#ef4444",   // red-500
+          foreground: "#ffffff",
         },
         muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: "#374151",   // gray-700
+          foreground: "#9ca3af", // gray-400
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: "#1f2937",   // gray-800
+          foreground: "#ffffff",
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: "#111827",   // gray-900
+          foreground: "#ffffff",
         },
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: "#111827",   // gray-900
+          foreground: "#ffffff",
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "0.5rem",
+        md: "0.375rem",
+        sm: "0.25rem",
       },
       keyframes: {
         "accordion-down": {

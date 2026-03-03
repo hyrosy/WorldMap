@@ -1,8 +1,61 @@
 {
-  "plugins": [
-    "@rnmapbox/maps"
-  ],
-  "android": {
-    "package": "com.anonymous.hyrosymap"
+  "expo": {
+    "name": "Hyrosy",
+    "slug": "hyrosy-map",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./public/hyrosy.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "hyrosy",
+    "splash": {
+      "image": "./public/hyrosy.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#111827"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hyrosy.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Hyrosy needs your location to show authentic experiences near you in Morocco.",
+        "NSPhotoLibraryUsageDescription": "Hyrosy needs access to your photos so you can share tips and images of your experiences."
+      }
+    },
+    "android": {
+      "package": "com.hyrosy.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./public/hyrosy.png",
+        "backgroundColor": "#111827"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "web": {
+      "favicon": "./public/favicon.ico",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "@rnmapbox/maps",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Hyrosy needs access to your photos so you can share tips and images of your experiences."
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.hyrosy.app",
+          "enableApplePay": true
+        }
+      ]
+    ]
   }
 }

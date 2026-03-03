@@ -10,14 +10,15 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
-  ...compat.extends("next/core-web-vitals"),
+  // Swapped Next.js rules for Expo's universal rules!
+  ...compat.extends("expo"),
   {
     ignores: [
       "node_modules/**",
-      ".next/**",
-      "out/**",
+      ".expo/**",       // Replaced .next
+      "dist/**",        // Replaced out
       "build/**",
-      "next-env.d.ts",
+      "expo-env.d.ts",  // Replaced next-env.d.ts
     ],
   },
 ];
