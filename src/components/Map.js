@@ -25,6 +25,7 @@ const Map = ({
   experienceRoute,
   userLocation,
   directionsRoute,
+  onMapClick,
 }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
@@ -37,10 +38,19 @@ const Map = ({
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/hyrosy/cmet0cvjx00db01qwc2gfet91",
+      style: "mapbox://styles/mapbox/outdoors-v12", // or your custom style
       center: [-10.06787, 29.032917],
       zoom: 0.5,
       pitch: 0,
+    });
+
+    // 🌟 ADD THIS NEW LISTENER 🌟
+    // When the user clicks the map, grab the coordinates!
+    map.current.on("click", (e) => {
+      if (onMapClick) {
+        // e.lngLat contains the exact { lng, lat } of the click
+        onMapClick(e.lngLat.lng, e.lngLat.lat);
+      }
     });
 
     if (mapRef) {

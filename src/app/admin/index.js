@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -14,6 +15,7 @@ import {
   Users,
   ArrowLeft,
   Trash2,
+  Edit, // <-- Added Edit Icon
 } from "lucide-react-native";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -23,22 +25,30 @@ export default function AdminDashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // --- NEW EDITING STATE ---
+  const [editingPin, setEditingPin] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    name: "",
+    category: "",
+    description: "",
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+
   // Fetch data whenever you click a different tab
   useEffect(() => {
+    setEditingPin(null); // Reset the editing view if we switch tabs
     fetchData();
   }, [activeTab]);
 
   const fetchData = async () => {
     setLoading(true);
     if (activeTab === "comments") {
-      // Fetch comments and grab the associated location name using a Supabase join!
       const { data: commentsData } = await supabase
         .from("comments")
         .select("*, locations(name)")
         .order("created_at", { ascending: false });
       setData(commentsData || []);
     } else if (activeTab === "pins") {
-      // Fetch all map pins
       const { data: pinsData } = await supabase
         .from("locations")
         .select("*")
@@ -51,14 +61,45 @@ export default function AdminDashboard() {
   };
 
   const deleteRecord = async (table, id) => {
-    // We use window.confirm here because it works flawlessly in Expo Web builds
     if (
       window.confirm(
         `Are you sure you want to delete this record? This cannot be undone.`
       )
     ) {
       await supabase.from(table).delete().eq("id", id);
-      fetchData(); // Refresh the list instantly after deleting
+      fetchData();
+    }
+  };
+
+  // --- NEW: Handle opening the edit form ---
+  const handleEditClick = (pin) => {
+    setEditingPin(pin.id);
+    setEditFormData({
+      name: pin.name,
+      category: pin.category || "",
+      description: pin.description || "",
+    });
+  };
+
+  // --- NEW: Save updates to Supabase ---
+  const savePinUpdate = async () => {
+    setIsUpdating(true);
+    const { error } = await supabase
+      .from("locations")
+      .update({
+        name: editFormData.name,
+        category: editFormData.category,
+        description: editFormData.description,
+      })
+      .eq("id", editingPin);
+
+    setIsUpdating(false);
+
+    if (error) {
+      alert("Error updating pin: " + error.message);
+    } else {
+      setEditingPin(null); // Close the edit form
+      fetchData(); // Refresh the data to show the new changes!
     }
   };
 
@@ -101,6 +142,76 @@ export default function AdminDashboard() {
     }
 
     if (activeTab === "pins") {
+      // 🌟 IF WE ARE EDITING A PIN, SHOW THE FORM 🌟
+      if (editingPin) {
+        return (
+          <View className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+            <Text className="text-2xl font-black text-white mb-6">
+              Edit Pin Details
+            </Text>
+
+            <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
+              Location Name
+            </Text>
+            <TextInput
+              className="bg-gray-900 text-white p-4 rounded-xl mb-4 border border-gray-700 focus:border-cyan-500"
+              value={editFormData.name}
+              onChangeText={(text) =>
+                setEditFormData({ ...editFormData, name: text })
+              }
+            />
+
+            <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
+              Category
+            </Text>
+            <TextInput
+              className="bg-gray-900 text-white p-4 rounded-xl mb-4 border border-gray-700 focus:border-cyan-500"
+              value={editFormData.category}
+              onChangeText={(text) =>
+                setEditFormData({ ...editFormData, category: text })
+              }
+            />
+
+            <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
+              Description
+            </Text>
+            <TextInput
+              className="bg-gray-900 text-white p-4 rounded-xl mb-8 border border-gray-700 focus:border-cyan-500"
+              value={editFormData.description}
+              onChangeText={(text) =>
+                setEditFormData({ ...editFormData, description: text })
+              }
+              multiline
+              numberOfLines={4}
+              style={{ minHeight: 100 }} // Ensure it's tall enough for a paragraph
+            />
+
+            <View className="flex-row gap-4">
+              <TouchableOpacity
+                className="flex-1 bg-gray-700 p-4 rounded-xl items-center border border-gray-600"
+                onPress={() => setEditingPin(null)}
+              >
+                <Text className="text-white font-bold text-lg">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 bg-cyan-500 p-4 rounded-xl items-center flex-row justify-center active:bg-cyan-600"
+                onPress={savePinUpdate}
+                disabled={isUpdating}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator color="black" />
+                ) : (
+                  <Text className="text-black font-bold text-lg">
+                    Save Changes
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+
+      // 🌟 OTHERWISE, SHOW THE LIST WITH THE NEW EDIT BUTTON 🌟
       return data.map((pin) => (
         <View
           key={pin.id}
@@ -117,12 +228,20 @@ export default function AdminDashboard() {
               {pin.lat}, {pin.lng}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => deleteRecord("locations", pin.id)}
-            className="p-3 bg-red-900/20 rounded-lg border border-red-900/50 active:bg-red-900/40"
-          >
-            <Trash2 size={20} color="#ef4444" />
-          </TouchableOpacity>
+          <View className="flex-row gap-2">
+            <TouchableOpacity
+              onPress={() => handleEditClick(pin)}
+              className="p-3 bg-blue-900/20 rounded-lg border border-blue-900/50 active:bg-blue-900/40"
+            >
+              <Edit size={20} color="#3b82f6" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => deleteRecord("locations", pin.id)}
+              className="p-3 bg-red-900/20 rounded-lg border border-red-900/50 active:bg-red-900/40"
+            >
+              <Trash2 size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
         </View>
       ));
     }
