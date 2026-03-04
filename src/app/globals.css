@@ -1,8 +1,12 @@
-@import "tailwindcss";
-@import 'mapbox-gl/dist/mapbox-gl.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "mapbox-gl/dist/mapbox-gl.css";
 
 /* Ensure the map takes up the full screen on Expo Web */
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -14,7 +18,7 @@ html, body, #root {
 */
 
 .user-marker {
-  background-image: url('/user-marker.png'); /* Ensure this image is in your public/assets folder */
+  background-image: url("/user-marker.png"); /* Ensure this image is in your public/assets folder */
   background-size: cover;
   width: 40px;
   height: 40px;
@@ -31,7 +35,7 @@ html, body, #root {
   background-color: #444444;
   border-radius: 50%;
   border: 2px solid rgb(255, 215, 0);
-  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
   cursor: pointer;
 }
 
