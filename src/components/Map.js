@@ -20,7 +20,7 @@ const Map = ({
   onPinClick,
   selectedCity,
   onAnimationEnd,
-  categoryIconMap,
+  categoryEmojiMap, // 🌟 UPDATED PROP NAME
   onLoad,
   experienceRoute,
   userLocation,
@@ -30,7 +30,7 @@ const Map = ({
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markersRef = useRef([]);
-  const userMarkerRef = useRef(null); // Ref for the user's GPS marker
+  const userMarkerRef = useRef(null); 
 
   // 1. Initialize Map
   useEffect(() => {
@@ -38,17 +38,14 @@ const Map = ({
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/outdoors-v12", // or your custom style
+      style: "mapbox://styles/mapbox/outdoors-v12", 
       center: [-10.06787, 29.032917],
       zoom: 0.5,
       pitch: 0,
     });
 
-    // 🌟 ADD THIS NEW LISTENER 🌟
-    // When the user clicks the map, grab the coordinates!
     map.current.on("click", (e) => {
       if (onMapClick) {
-        // e.lngLat contains the exact { lng, lat } of the click
         onMapClick(e.lngLat.lng, e.lngLat.lat);
       }
     });
@@ -79,7 +76,6 @@ const Map = ({
         }
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 2. Camera Flights (City Selection)
@@ -110,10 +106,9 @@ const Map = ({
     if (onAnimationEnd) {
       currentMap.once("moveend", onAnimationEnd);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCity]);
 
-  // 3. Render Location Pins
+  // 3. 🌟 Render BEAUTIFUL EMOJI PINS 🌟
   useEffect(() => {
     const currentMap = mapRef.current;
     if (!currentMap || !currentMap.isStyleLoaded()) return;
@@ -122,32 +117,41 @@ const Map = ({
     markersRef.current = [];
 
     displayedPins.forEach((pin) => {
-      // UPDATED: Flat category reference from Supabase
       const categoryName = pin.category;
+      // Get the correct emoji, or default to a standard pin
+      const pinEmoji = categoryEmojiMap?.[categoryName] || "📍"; 
 
-      // Note: Update your map.js parent component's categoryIconMap to map string names instead of IDs
-      const iconFile = categoryIconMap?.[categoryName] || "adventure.png";
+      // --- Create the Beautiful DOM Marker ---
+      const markerWrapper = document.createElement("div");
+      // Tailwind classes for hover bouncing and crisp shadows
+      markerWrapper.className = "group cursor-pointer relative flex items-center justify-center transition-transform hover:scale-125 active:scale-95 pb-3";
 
-      const markerEl = document.createElement("div");
-      markerEl.className = "custom-marker";
-      markerEl.style.backgroundImage = `url(/pin-icons/${iconFile})`;
-      markerEl.style.width = "30px";
-      markerEl.style.height = "30px";
-      markerEl.style.backgroundSize = "contain";
+      // The Bubble
+      const bubble = document.createElement("div");
+      bubble.className = "w-10 h-10 bg-white rounded-full shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center justify-center text-xl border border-gray-100 z-10 font-sans";
+      bubble.innerText = pinEmoji;
 
-      markerEl.addEventListener("click", (e) => {
+      // The Pointer (CSS Triangle pointing down)
+      const pointer = document.createElement("div");
+      pointer.className = "absolute bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-white z-0";
+
+      // Assemble
+      markerWrapper.appendChild(bubble);
+      markerWrapper.appendChild(pointer);
+
+      // Handle Click
+      markerWrapper.addEventListener("click", (e) => {
         e.stopPropagation();
         onPinClick(pin);
       });
 
-      const marker = new mapboxgl.Marker(markerEl)
-        .setLngLat([pin.lng, pin.lat]) // Supabase provides these cleanly!
+      const marker = new mapboxgl.Marker(markerWrapper)
+        .setLngLat([pin.lng, pin.lat])
         .addTo(currentMap);
 
       markersRef.current.push(marker);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayedPins, categoryIconMap]);
+  }, [displayedPins, categoryEmojiMap]);
 
   // 4. Render Experience Routes
   useEffect(() => {
@@ -223,17 +227,16 @@ const Map = ({
     manageRoute();
   }, [experienceRoute]);
 
-  // 5. Render User GPS Marker (NEW)
+  // 5. Render User GPS Marker
   useEffect(() => {
     if (!map.current || !userLocation) return;
 
     if (userMarkerRef.current) {
-      // Move existing marker
       userMarkerRef.current.setLngLat(userLocation);
     } else {
-      // Create new marker
       const markerElement = document.createElement("div");
-      markerElement.className = "user-marker"; // Relies on your global.css
+      // Optional: Style your user marker directly here if you don't have CSS
+      markerElement.className = "w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg";
 
       userMarkerRef.current = new mapboxgl.Marker(markerElement)
         .setLngLat(userLocation)
@@ -241,7 +244,7 @@ const Map = ({
     }
   }, [userLocation]);
 
-  // 6. Render A-to-B Directions Route (NEW)
+  // 6. Render A-to-B Directions Route
   useEffect(() => {
     const currentMap = map.current;
     if (!currentMap || !currentMap.isStyleLoaded()) return;

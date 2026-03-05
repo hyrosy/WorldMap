@@ -65,19 +65,25 @@ export default function WebMapPage() {
   const { showIosInstallPopup, handleInstallClick, closeIosInstallPopup } =
     usePwaInstall();
 
-  const categoryIconMap = {
-    Activities: "adventure1.png",
-    Experiences: "adventure1.png",
-    Restaurants: "food.png",
-    "Food & Cooking": "food.png",
-    Monuments: "monuments.png",
-    "Books & Guides": "monuments.png",
-    Shops: "shopping.png",
-    "Fashion & Accessories": "shopping.png",
-    "Home Decor": "shopping.png",
-    Hotels: "building.png",
-    "Home & Lifestyle": "building.png",
-    Transport: "quad-bike.png",
+
+  const categoryEmojiMap = {
+    "Activities": "🎯",
+    "Experiences": "🗺️",
+    "Restaurants": "🍽️",
+    "Food & Cooking": "🍳",
+    "Monuments": "🏛️",
+    "Books & Guides": "📚",
+    "Shops": "🛍️",
+    "Fashion & Accessories": "👗",
+    "Home Decor": "🏺",
+    "Hotels": "🏨",
+    "Home & Lifestyle": "🛋️",
+    "Transport": "🚕",
+    "Health": "🏥",
+    "Nature": "🌳",
+    "Services": "🛠️",
+    "Nightlife": "🪩",
+    "Wellness": "🧘‍♀️",
   };
 
   const [isFilterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -305,7 +311,7 @@ export default function WebMapPage() {
           displayedPins={displayedPins}
           onPinClick={setSelectedPin}
           selectedCity={selectedCity}
-          categoryIconMap={categoryIconMap}
+          categoryEmojiMap={categoryEmojiMap}
           onLoad={(mapInstance) => {
             mapRef.current = mapInstance;
             setMapLoaded(true);
