@@ -294,19 +294,18 @@ export default function QuestPanel({
 
   // 🌟 NEW DYNAMIC FILTERING 🌟
   const questsByCity = (quests || []).reduce((acc, quest) => {
-    const city = quest.city || "Multi-City";
-    if (city !== "Multi-City") {
+    if (quest.quest_type !== "multi_city") {
+      const city = quest.city || "Unknown";
       if (!acc[city]) acc[city] = [];
       acc[city].push(quest);
     }
     return acc;
   }, {});
+
   const multiCityQuests = (quests || []).filter(
-    (q) => !q.city || q.city === "Multi-City"
+    (q) => q.quest_type === "multi_city"
   );
-  const premiumQuests = (quests || []).filter((q) =>
-    q.description?.toLowerCase().includes("pro")
-  );
+  const premiumQuests = (quests || []).filter((q) => q.is_pro === true);
 
   // --- RENDER VIEWS ---
   const renderMyExperiences = () => {

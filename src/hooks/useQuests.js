@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { supabase } from "@/lib/supabaseClient"; // 🌟 Added Supabase import
+import { supabase } from "@/lib/supabaseClient";
 
 export default function useQuests(mapRef, setSelectedPin) {
   const [quests, setQuests] = useState([]);
@@ -42,7 +42,7 @@ export default function useQuests(mapRef, setSelectedPin) {
     saveExploredSteps();
   }, [exploredSteps, isStorageLoaded]);
 
-  // 3. 🌟 THE NEW SUPABASE FETCH 🌟
+  // 3. THE NEW SUPABASE FETCH
   useEffect(() => {
     const fetchQuests = async () => {
       try {
@@ -56,6 +56,8 @@ export default function useQuests(mapRef, setSelectedPin) {
             description,
             city,
             image_url,
+            quest_type,
+            is_pro,
             quest_steps (
               step_order,
               locations (*)
@@ -96,7 +98,7 @@ export default function useQuests(mapRef, setSelectedPin) {
     setQuestStepIndex(index);
     setSelectedPin(step);
 
-    // 4. Cleaned up Camera Movement (No more WP acf logic needed!)
+    // 4. Cleaned up Camera Movement
     if (step && step.lat !== undefined && step.lng !== undefined) {
       const lat = parseFloat(step.lat);
       const lng = parseFloat(step.lng);
