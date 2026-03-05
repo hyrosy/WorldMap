@@ -15,7 +15,12 @@ import {
   Users,
   ArrowLeft,
   Trash2,
-  Edit, // <-- Added Edit Icon
+  Edit,
+  Route,
+  Plus,
+  X,
+  CheckCircle2,
+  Circle,
 } from "lucide-react-native";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -25,7 +30,7 @@ export default function AdminDashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // --- NEW EDITING STATE ---
+  // --- EDITING STATE (For Pins) ---
   const [editingPin, setEditingPin] = useState(null);
   const [editFormData, setEditFormData] = useState({
     name: "",
@@ -34,9 +39,20 @@ export default function AdminDashboard() {
   });
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // --- QUEST BUILDER STATE ---
+  const [isCreatingQuest, setIsCreatingQuest] = useState(false);
+  const [allLocations, setAllLocations] = useState([]); // Holds all map pins to select from
+  const [newQuestData, setNewQuestData] = useState({
+    title: "",
+    description: "",
+    city: "Marrakech",
+    selectedPins: [], // Array to hold the selected pin objects
+  });
+
   // Fetch data whenever you click a different tab
   useEffect(() => {
-    setEditingPin(null); // Reset the editing view if we switch tabs
+    setEditingPin(null);
+    setIsCreatingQuest(false); // Close quest builder if we change tabs
     fetchData();
   }, [activeTab]);
 
@@ -54,6 +70,20 @@ export default function AdminDashboard() {
         .select("*")
         .order("created_at", { ascending: false });
       setData(pinsData || []);
+    } else if (activeTab === "quests") {
+      // Fetch Quests
+      const { data: questsData } = await supabase
+        .from("quests")
+        .select("*")
+        .order("city", { ascending: true });
+      setData(questsData || []);
+
+      // 🌟 Fetch all Locations so the Admin can select them for the Quest! 🌟
+      const { data: locs } = await supabase
+        .from("locations")
+        .select("*")
+        .order("name");
+      setAllLocations(locs || []);
     } else {
       setData([]);
     }
@@ -71,7 +101,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- NEW: Handle opening the edit form ---
+  // --- Handle opening the edit form for pins ---
   const handleEditClick = (pin) => {
     setEditingPin(pin.id);
     setEditFormData({
@@ -81,7 +111,7 @@ export default function AdminDashboard() {
     });
   };
 
-  // --- NEW: Save updates to Supabase ---
+  // --- Save pin updates ---
   const savePinUpdate = async () => {
     setIsUpdating(true);
     const { error } = await supabase
@@ -94,12 +124,82 @@ export default function AdminDashboard() {
       .eq("id", editingPin);
 
     setIsUpdating(false);
+    if (error) alert("Error updating pin: " + error.message);
+    else {
+      setEditingPin(null);
+      fetchData();
+    }
+  };
 
-    if (error) {
-      alert("Error updating pin: " + error.message);
+  // --- Toggle Pin Selection for New Quest ---
+  const togglePinForQuest = (pin) => {
+    setNewQuestData((prev) => {
+      const isAlreadySelected = prev.selectedPins.some((p) => p.id === pin.id);
+      if (isAlreadySelected) {
+        // Remove it if clicked again
+        return {
+          ...prev,
+          selectedPins: prev.selectedPins.filter((p) => p.id !== pin.id),
+        };
+      } else {
+        // Add it to the end of the route
+        return { ...prev, selectedPins: [...prev.selectedPins, pin] };
+      }
+    });
+  };
+
+  // --- 🌟 SAVE THE NEW QUEST TO SUPABASE 🌟 ---
+  const handleSaveNewQuest = async () => {
+    if (!newQuestData.title || newQuestData.selectedPins.length === 0) {
+      alert("Please provide a title and select at least one pin!");
+      return;
+    }
+    setIsUpdating(true);
+
+    // 1. Insert the Quest into the `quests` table
+    const { data: insertedQuest, error: questError } = await supabase
+      .from("quests")
+      .insert([
+        {
+          title: newQuestData.title,
+          description: newQuestData.description,
+          city: newQuestData.city,
+        },
+      ])
+      .select()
+      .single();
+
+    if (questError) {
+      alert("Error saving quest: " + questError.message);
+      setIsUpdating(false);
+      return;
+    }
+
+    // 2. Insert the selected pins into the `quest_steps` table in order!
+    const stepsToInsert = newQuestData.selectedPins.map((pin, index) => ({
+      quest_id: insertedQuest.id,
+      location_id: pin.id,
+      step_order: index + 1, // Step 1, Step 2, Step 3...
+    }));
+
+    const { error: stepsError } = await supabase
+      .from("quest_steps")
+      .insert(stepsToInsert);
+
+    setIsUpdating(false);
+
+    if (stepsError) {
+      alert("Error linking pins: " + stepsError.message);
     } else {
-      setEditingPin(null); // Close the edit form
-      fetchData(); // Refresh the data to show the new changes!
+      // Success! Reset form and reload
+      setIsCreatingQuest(false);
+      setNewQuestData({
+        title: "",
+        description: "",
+        city: "Marrakech",
+        selectedPins: [],
+      });
+      fetchData();
     }
   };
 
@@ -109,12 +209,12 @@ export default function AdminDashboard() {
         <ActivityIndicator size="large" color="#22d3ee" className="mt-10" />
       );
 
-    if (data.length === 0)
-      return (
-        <Text className="text-gray-500 italic mt-5">No records found.</Text>
-      );
-
+    // ... (Comments and Pins tabs remain unchanged, omitted for brevity but included in full copy)
     if (activeTab === "comments") {
+      if (data.length === 0)
+        return (
+          <Text className="text-gray-500 italic mt-5">No records found.</Text>
+        );
       return data.map((comment) => (
         <View
           key={comment.id}
@@ -133,7 +233,7 @@ export default function AdminDashboard() {
           </View>
           <TouchableOpacity
             onPress={() => deleteRecord("comments", comment.id)}
-            className="p-3 bg-red-900/20 rounded-lg border border-red-900/50 active:bg-red-900/40"
+            className="p-3 bg-red-900/20 rounded-lg border border-red-900/50"
           >
             <Trash2 size={20} color="#ef4444" />
           </TouchableOpacity>
@@ -142,14 +242,12 @@ export default function AdminDashboard() {
     }
 
     if (activeTab === "pins") {
-      // 🌟 IF WE ARE EDITING A PIN, SHOW THE FORM 🌟
       if (editingPin) {
         return (
           <View className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
             <Text className="text-2xl font-black text-white mb-6">
               Edit Pin Details
             </Text>
-
             <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
               Location Name
             </Text>
@@ -160,7 +258,6 @@ export default function AdminDashboard() {
                 setEditFormData({ ...editFormData, name: text })
               }
             />
-
             <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
               Category
             </Text>
@@ -171,7 +268,6 @@ export default function AdminDashboard() {
                 setEditFormData({ ...editFormData, category: text })
               }
             />
-
             <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
               Description
             </Text>
@@ -183,9 +279,8 @@ export default function AdminDashboard() {
               }
               multiline
               numberOfLines={4}
-              style={{ minHeight: 100 }} // Ensure it's tall enough for a paragraph
+              style={{ minHeight: 100 }}
             />
-
             <View className="flex-row gap-4">
               <TouchableOpacity
                 className="flex-1 bg-gray-700 p-4 rounded-xl items-center border border-gray-600"
@@ -194,7 +289,7 @@ export default function AdminDashboard() {
                 <Text className="text-white font-bold text-lg">Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                className="flex-1 bg-cyan-500 p-4 rounded-xl items-center flex-row justify-center active:bg-cyan-600"
+                className="flex-1 bg-cyan-500 p-4 rounded-xl items-center flex-row justify-center"
                 onPress={savePinUpdate}
                 disabled={isUpdating}
               >
@@ -210,8 +305,10 @@ export default function AdminDashboard() {
           </View>
         );
       }
-
-      // 🌟 OTHERWISE, SHOW THE LIST WITH THE NEW EDIT BUTTON 🌟
+      if (data.length === 0)
+        return (
+          <Text className="text-gray-500 italic mt-5">No records found.</Text>
+        );
       return data.map((pin) => (
         <View
           key={pin.id}
@@ -231,19 +328,241 @@ export default function AdminDashboard() {
           <View className="flex-row gap-2">
             <TouchableOpacity
               onPress={() => handleEditClick(pin)}
-              className="p-3 bg-blue-900/20 rounded-lg border border-blue-900/50 active:bg-blue-900/40"
+              className="p-3 bg-blue-900/20 rounded-lg border border-blue-900/50"
             >
               <Edit size={20} color="#3b82f6" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => deleteRecord("locations", pin.id)}
-              className="p-3 bg-red-900/20 rounded-lg border border-red-900/50 active:bg-red-900/40"
+              className="p-3 bg-red-900/20 rounded-lg border border-red-900/50"
             >
               <Trash2 size={20} color="#ef4444" />
             </TouchableOpacity>
           </View>
         </View>
       ));
+    }
+
+    // 🌟 THE NEW QUESTS TAB 🌟
+    if (activeTab === "quests") {
+      // If we are currently building a new quest, show the form!
+      if (isCreatingQuest) {
+        return (
+          <View className="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+            <Text className="text-2xl font-black text-white mb-6">
+              Build New Quest
+            </Text>
+
+            <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
+              Quest Title
+            </Text>
+            <TextInput
+              className="bg-gray-900 text-white p-4 rounded-xl mb-4 border border-gray-700 focus:border-cyan-500"
+              placeholder="e.g. Hidden Gems of the Medina"
+              placeholderTextColor="#6b7280"
+              value={newQuestData.title}
+              onChangeText={(text) =>
+                setNewQuestData({ ...newQuestData, title: text })
+              }
+            />
+
+            <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
+              City
+            </Text>
+            <TextInput
+              className="bg-gray-900 text-white p-4 rounded-xl mb-4 border border-gray-700 focus:border-cyan-500"
+              placeholder="e.g. Marrakech"
+              placeholderTextColor="#6b7280"
+              value={newQuestData.city}
+              onChangeText={(text) =>
+                setNewQuestData({ ...newQuestData, city: text })
+              }
+            />
+
+            <Text className="text-gray-400 text-xs font-bold uppercase mb-2 ml-1">
+              Description
+            </Text>
+            <TextInput
+              className="bg-gray-900 text-white p-4 rounded-xl mb-8 border border-gray-700 focus:border-cyan-500"
+              placeholder="What makes this route special?"
+              placeholderTextColor="#6b7280"
+              value={newQuestData.description}
+              onChangeText={(text) =>
+                setNewQuestData({ ...newQuestData, description: text })
+              }
+              multiline
+              style={{ minHeight: 80 }}
+            />
+
+            {/* --- The Pin Selector --- */}
+            <View className="mb-8">
+              <Text className="text-cyan-400 text-sm font-bold uppercase mb-4 flex-row items-center">
+                Select Route Steps ({newQuestData.selectedPins.length} selected)
+              </Text>
+              <View className="bg-gray-900 rounded-xl border border-gray-700 max-h-64 overflow-hidden">
+                <ScrollView className="p-2" nestedScrollEnabled={true}>
+                  {allLocations.map((pin) => {
+                    const isSelected = newQuestData.selectedPins.some(
+                      (p) => p.id === pin.id
+                    );
+                    const stepNumber =
+                      newQuestData.selectedPins.findIndex(
+                        (p) => p.id === pin.id
+                      ) + 1;
+                    return (
+                      <TouchableOpacity
+                        key={pin.id}
+                        onPress={() => togglePinForQuest(pin)}
+                        className={`flex-row items-center justify-between p-3 rounded-lg mb-1 ${
+                          isSelected
+                            ? "bg-cyan-900/40 border border-cyan-500/50"
+                            : "hover:bg-gray-800"
+                        }`}
+                      >
+                        <View className="flex-row items-center">
+                          {isSelected ? (
+                            <CheckCircle2
+                              size={20}
+                              color="#22d3ee"
+                              className="mr-3"
+                            />
+                          ) : (
+                            <Circle
+                              size={20}
+                              color="#4b5563"
+                              className="mr-3"
+                            />
+                          )}
+                          <Text
+                            className={`${
+                              isSelected
+                                ? "text-white font-bold"
+                                : "text-gray-400"
+                            }`}
+                          >
+                            {pin.name}
+                          </Text>
+                        </View>
+                        {isSelected && (
+                          <View className="bg-cyan-500 h-6 w-6 rounded-full items-center justify-center">
+                            <Text className="text-black text-xs font-black">
+                              {stepNumber}
+                            </Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+
+            {/* Save / Cancel Buttons */}
+            <View className="flex-row gap-4">
+              <TouchableOpacity
+                className="flex-1 bg-gray-700 p-4 rounded-xl items-center border border-gray-600"
+                onPress={() => setIsCreatingQuest(false)}
+              >
+                <Text className="text-white font-bold text-lg">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 bg-cyan-500 p-4 rounded-xl items-center flex-row justify-center"
+                onPress={handleSaveNewQuest}
+                disabled={isUpdating}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator color="black" />
+                ) : (
+                  <Text className="text-black font-bold text-lg">
+                    Publish Quest
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+
+      // If we are not creating, show the Quest List
+      const groupedQuests = data.reduce((acc, quest) => {
+        const cityKey = quest.city || "Multi-City";
+        if (!acc[cityKey]) acc[cityKey] = [];
+        acc[cityKey].push(quest);
+        return acc;
+      }, {});
+
+      return (
+        <View>
+          {/* 🌟 THE WIRED UP BUTTON 🌟 */}
+          <TouchableOpacity
+            onPress={() => setIsCreatingQuest(true)}
+            className="bg-cyan-500 flex-row items-center justify-center p-4 rounded-xl mb-8 active:bg-cyan-600 shadow-lg"
+          >
+            <Plus size={20} color="black" />
+            <Text className="text-black font-black text-lg ml-2">
+              Create New Quest
+            </Text>
+          </TouchableOpacity>
+
+          {Object.keys(groupedQuests).length === 0 ? (
+            <Text className="text-gray-500 italic mt-2">
+              No quests created yet.
+            </Text>
+          ) : (
+            Object.keys(groupedQuests).map((city) => (
+              <View key={city} className="mb-8">
+                <View className="flex-row items-center mb-4">
+                  <Text className="text-2xl font-black text-white">{city}</Text>
+                  <View className="bg-gray-800 px-3 py-1 rounded-full ml-3 border border-gray-700">
+                    <Text className="text-gray-400 text-xs font-bold">
+                      {groupedQuests[city].length} Quests
+                    </Text>
+                  </View>
+                </View>
+
+                {groupedQuests[city].map((quest) => (
+                  <View
+                    key={quest.id}
+                    className="bg-gray-800 p-5 rounded-xl mb-3 border border-gray-700 flex-row justify-between items-center"
+                  >
+                    <View className="flex-1 pr-4">
+                      <View className="flex-row items-center mb-2">
+                        <Text className="text-white font-bold text-lg mr-3">
+                          {quest.title}
+                        </Text>
+                        {city === "Multi-City" ? (
+                          <View className="bg-purple-900/40 px-2 py-1 rounded border border-purple-500/50">
+                            <Text className="text-purple-400 text-[10px] font-bold uppercase">
+                              Multi-City
+                            </Text>
+                          </View>
+                        ) : (
+                          <View className="bg-cyan-900/40 px-2 py-1 rounded border border-cyan-500/50 mr-2">
+                            <Text className="text-cyan-400 text-[10px] font-bold uppercase">
+                              In-City
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text className="text-gray-400 text-sm" numberOfLines={2}>
+                        {quest.description || "No description provided."}
+                      </Text>
+                    </View>
+                    <View className="flex-row gap-2">
+                      <TouchableOpacity
+                        onPress={() => deleteRecord("quests", quest.id)}
+                        className="p-3 bg-red-900/20 rounded-lg border border-red-900/50"
+                      >
+                        <Trash2 size={20} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ))
+          )}
+        </View>
+      );
     }
 
     return (
@@ -255,7 +574,7 @@ export default function AdminDashboard() {
 
   return (
     <View className="flex-1 flex-row bg-black">
-      {/* Admin Sidebar */}
+      {/* Sidebar logic remains identical */}
       <View className="w-64 bg-gray-900 border-r border-gray-800 p-5 pt-12">
         <View className="flex-row items-center mb-10">
           <ShieldCheck size={32} color="#22d3ee" />
@@ -285,7 +604,6 @@ export default function AdminDashboard() {
               Comments
             </Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             onPress={() => setActiveTab("pins")}
             className={`flex-row items-center p-4 rounded-xl ${
@@ -306,7 +624,26 @@ export default function AdminDashboard() {
               Map Pins
             </Text>
           </TouchableOpacity>
-
+          <TouchableOpacity
+            onPress={() => setActiveTab("quests")}
+            className={`flex-row items-center p-4 rounded-xl ${
+              activeTab === "quests"
+                ? "bg-cyan-500/20 border border-cyan-500/50"
+                : "bg-transparent"
+            }`}
+          >
+            <Route
+              size={20}
+              color={activeTab === "quests" ? "#22d3ee" : "#9ca3af"}
+            />
+            <Text
+              className={`ml-3 font-bold ${
+                activeTab === "quests" ? "text-cyan-400" : "text-gray-400"
+              }`}
+            >
+              Quests
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setActiveTab("users")}
             className={`flex-row items-center p-4 rounded-xl ${
@@ -329,7 +666,6 @@ export default function AdminDashboard() {
           </TouchableOpacity>
         </View>
 
-        {/* Exit Button */}
         <TouchableOpacity
           onPress={() => router.replace("/")}
           className="flex-row items-center p-4 bg-gray-800 rounded-xl mt-auto border border-gray-700"
