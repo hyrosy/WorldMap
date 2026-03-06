@@ -1,26 +1,26 @@
-import { useState, useEffect } from 'react';
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useState, useEffect } from "react";
+import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function useQuests(mapRef, setSelectedPin) {
   const [quests, setQuests] = useState([]);
   const [activeQuest, setActiveQuest] = useState(null);
   const [questStepIndex, setQuestStepIndex] = useState(0);
 
-  // We start with an empty set and load from AsyncStorage on mount
   const [exploredSteps, setExploredSteps] = useState(new Set());
   const [isStorageLoaded, setIsStorageLoaded] = useState(false);
 
-  // 1. Asynchronously load saved progress on startup
+  // 1. Load saved progress on startup
   useEffect(() => {
     const loadExploredSteps = async () => {
       try {
-        const saved = await AsyncStorage.getItem('exploredSteps');
+        const saved = await AsyncStorage.getItem("exploredSteps");
         if (saved) {
           setExploredSteps(new Set(JSON.parse(saved)));
         }
       } catch (error) {
-        console.error('Failed to load explored steps:', error);
+        console.error("Failed to load explored steps:", error);
       } finally {
         setIsStorageLoaded(true);
       }
@@ -28,32 +28,62 @@ export default function useQuests(mapRef, setSelectedPin) {
     loadExploredSteps();
   }, []);
 
-  // 2. Save to AsyncStorage whenever progress changes
+  // 2. Save progress whenever it changes
   useEffect(() => {
-    if (!isStorageLoaded) return; // Prevent overwriting with empty state before loading finishes
-    
+    if (!isStorageLoaded) return;
     const saveExploredSteps = async () => {
       try {
         const stepsArray = Array.from(exploredSteps);
-        await AsyncStorage.setItem('exploredSteps', JSON.stringify(stepsArray));
+        await AsyncStorage.setItem("exploredSteps", JSON.stringify(stepsArray));
       } catch (error) {
-        console.error('Failed to save explored steps:', error);
+        console.error("Failed to save explored steps:", error);
       }
     };
     saveExploredSteps();
   }, [exploredSteps, isStorageLoaded]);
 
-  // Fetch Official Quests (Leaving this mapped to WP until you migrate Quests to Supabase)
+  // 3. THE NEW SUPABASE FETCH
   useEffect(() => {
     const fetchQuests = async () => {
-      const apiUrl = 'https://data.hyrosy.com/wp-json/wp/v2/quests?acf_format=standard';
       try {
-        const response = await fetch(apiUrl);
-        if (!response.ok) throw new Error('API response was not ok.');
-        const questsData = await response.json();
-        setQuests(questsData);
+        // Fetch quests and use a relational join to grab the actual location data for each step
+        const { data, error } = await supabase
+          .from("quests")
+          .select(
+            `
+            id,
+            title,
+            description,
+            city,
+            image_url,
+            quest_type,
+            is_pro,
+            quest_steps (
+              step_order,
+              locations (*)
+            )
+          `
+          )
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        // Format it so the frontend panel gets a clean array of `steps` just like it used to
+        const formattedQuests = data.map((quest) => {
+          const sortedSteps = quest.quest_steps
+            .sort((a, b) => a.step_order - b.step_order)
+            .map((step) => step.locations)
+            .filter(Boolean); // Strip out nulls
+
+          return {
+            ...quest,
+            steps: sortedSteps,
+          };
+        });
+
+        setQuests(formattedQuests);
       } catch (error) {
-        console.error('Failed to fetch quests:', error);
+        console.error("Failed to fetch Supabase quests:", error);
       }
     };
     fetchQuests();
@@ -61,52 +91,39 @@ export default function useQuests(mapRef, setSelectedPin) {
 
   const handleQuestSelect = (quest) => {
     setActiveQuest(quest);
-    setQuestStepIndex(0); // Reset to the first step when a new quest is selected
+    setQuestStepIndex(0);
   };
 
   const handleQuestStepSelect = (step, index) => {
     setQuestStepIndex(index);
-    setSelectedPin(step); // Show the pin details in the modal
+    setSelectedPin(step);
 
-    if (step && mapRef.current) {
-      // 3. Handle both Supabase (lat/lng) and Old WP (acf.gps_coordinates) data shapes
-      let lat, lng;
-      
-      if (step.lat !== undefined && step.lng !== undefined) {
-          lat = parseFloat(step.lat);
-          lng = parseFloat(step.lng);
-      } else if (step.acf && step.acf.gps_coordinates) {
-          const coords = step.acf.gps_coordinates.split(',').map(s => parseFloat(s.trim()));
-          lat = coords[0];
-          lng = coords[1];
-      }
+    // 4. Cleaned up Camera Movement
+    if (step && step.lat !== undefined && step.lng !== undefined) {
+      const lat = parseFloat(step.lat);
+      const lng = parseFloat(step.lng);
 
-      // 4. Universal Camera Movement
-      if (lat !== undefined && lng !== undefined) {
-        if (Platform.OS === 'web') {
-          // Web Mapbox GL
-          mapRef.current.flyTo({
-            center: [lng, lat],
-            zoom: 16,
-            pitch: 60,
-            speed: 1.0,
-            essential: true,
-          });
-        } else {
-          // Native Mapbox (@rnmapbox/maps)
-          mapRef.current.setCamera({
-            centerCoordinate: [lng, lat],
-            zoomLevel: 16,
-            pitch: 60,
-            animationDuration: 1000,
-          });
-        }
+      if (Platform.OS === "web") {
+        mapRef.current.flyTo({
+          center: [lng, lat],
+          zoom: 16,
+          pitch: 60,
+          speed: 1.0,
+          essential: true,
+        });
+      } else {
+        mapRef.current.setCamera({
+          centerCoordinate: [lng, lat],
+          zoomLevel: 16,
+          pitch: 60,
+          animationDuration: 1000,
+        });
       }
     }
   };
 
   const handleToggleStepExplored = (stepId) => {
-    setExploredSteps(prevExplored => {
+    setExploredSteps((prevExplored) => {
       const newExplored = new Set(prevExplored);
       if (newExplored.has(stepId)) {
         newExplored.delete(stepId);
