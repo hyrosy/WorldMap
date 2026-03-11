@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import mbxDirections from "@mapbox/mapbox-sdk/services/directions";
+import * as turf from "@turf/turf"; // 🌟 THE NEW FOG OF WAR ENGINE 🌟
 
-//mapboxgl.workerUrl = "/mapbox-gl-csp-worker.js";
 mapboxgl.accessToken =
   process.env.NEXT_PUBLIC_MAPBOX_TOKEN ||
   process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
@@ -13,46 +13,81 @@ mapboxgl.accessToken =
 
 const directionsClient = mbxDirections({ accessToken: mapboxgl.accessToken });
 
-// UPDATED PROPS: Added userLocation and directionsRoute
 const Map = ({
   mapRef,
   displayedPins,
   onPinClick,
   selectedCity,
   onAnimationEnd,
-  categoryEmojiMap, // 🌟 UPDATED PROP NAME
+  categoryIconMap,
   onLoad,
   experienceRoute,
   userLocation,
   directionsRoute,
   onMapClick,
+  partyLocations = [],
 }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
-  const markersRef = useRef([]);
-  const userMarkerRef = useRef(null); 
+  const userMarkerRef = useRef(null);
+  const partyMarkersRef = useRef({});
 
-  // 1. Initialize Map
+  // 🌟 FOG OF WAR: TRACKS WHERE YOU HAVE WALKED 🌟
+  const [walkedPath, setWalkedPath] = useState([]);
+
+  const pinsRef = useRef(displayedPins);
+  useEffect(() => {
+    pinsRef.current = displayedPins;
+  }, [displayedPins]);
+
+  // 1. Initialize Map, Load Icons, & Render The Fog
+  // 1. Initialize Map & Load Custom Images into Canvas
   useEffect(() => {
     if (map.current) return;
 
+    // 🌟 DYNAMIC DAY/NIGHT CYCLE 🌟
+    // 🌟 DYNAMIC DAY/NIGHT CYCLE 🌟
+    const currentHour = new Date().getHours();
+    const isNight = currentHour >= 19 || currentHour <= 6;
+
+    // Changed styles to avoid premium traffic API (Fixes the 404 Incidents error)
+    const dynamicStyle = isNight
+      ? "mapbox://styles/mapbox/dark-v11"
+      : "mapbox://styles/mapbox/outdoors-v12"; // Outdoors looks amazing for exploration
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/outdoors-v12", 
-      center: [-10.06787, 29.032917],
-      zoom: 0.5,
-      pitch: 0,
+      style: dynamicStyle,
+      center: [-7.98, 31.63],
+      zoom: 12,
+      pitch: 45,
     });
 
     map.current.on("click", (e) => {
-      if (onMapClick) {
+      const targetLayers = [
+        "unclustered-point-bg",
+        "unclustered-point",
+        "clusters",
+      ];
+      const existingLayers = targetLayers.filter((layerId) =>
+        map.current.getLayer(layerId)
+      );
+
+      let features = [];
+      if (existingLayers.length > 0) {
+        try {
+          features = map.current.queryRenderedFeatures(e.point, {
+            layers: existingLayers,
+          });
+        } catch (err) {}
+      }
+
+      if (features.length === 0 && onMapClick) {
         onMapClick(e.lngLat.lng, e.lngLat.lat);
       }
     });
 
-    if (mapRef) {
-      mapRef.current = map.current;
-    }
+    if (mapRef) mapRef.current = map.current;
 
     map.current.on("load", () => {
       map.current.addSource("mapbox-dem", {
@@ -62,7 +97,25 @@ const Map = ({
         maxzoom: 14,
       });
       map.current.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
-      map.current.setFog({});
+      map.current.setFog({
+        color: isNight ? "rgba(28, 29, 40, 0.8)" : "rgba(255, 255, 255, 0.8)",
+        "horizon-blend": 0.2,
+      });
+
+      map.current.loadImage("/placeholder.png", (error, image) => {
+        if (!error && !map.current.hasImage("placeholder.png"))
+          map.current.addImage("placeholder.png", image);
+      });
+
+      if (categoryIconMap) {
+        const uniqueIcons = [...new Set(Object.values(categoryIconMap))];
+        uniqueIcons.forEach((iconName) => {
+          map.current.loadImage(`/pin-icons/${iconName}`, (error, image) => {
+            if (!error && !map.current.hasImage(iconName))
+              map.current.addImage(iconName, image);
+          });
+        });
+      }
 
       if (onLoad) onLoad(map.current);
     });
@@ -71,89 +124,176 @@ const Map = ({
       if (map.current) {
         map.current.remove();
         map.current = null;
-        if (mapRef) {
-          mapRef.current = null;
-        }
+        if (mapRef) mapRef.current = null;
       }
     };
   }, []);
 
-  // 2. Camera Flights (City Selection)
+  // 🌟 FOG OF WAR: UPDATE WALKED PATH FROM GPS 🌟
+  useEffect(() => {
+    if (!userLocation) return;
+
+    // Add current GPS to our trail, ignoring if we haven't moved to save memory
+    setWalkedPath((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last[0] === userLocation[0] && last[1] === userLocation[1])
+        return prev;
+      return [...prev, userLocation];
+    });
+  }, [userLocation]);
+
+  // 🌟 FOG OF WAR: CUT HOLES IN THE FOG USING TURF.JS 🌟
+  useEffect(() => {
+    const currentMap = map.current;
+    if (
+      !currentMap ||
+      !currentMap.getSource("fog-source") ||
+      walkedPath.length === 0
+    )
+      return;
+
+    // 1. The world bounding box
+    const worldBox = turf.bboxPolygon([-180, -85, 180, 85]);
+    let exploredArea;
+
+    // 2. Buffer the GPS trail by 50 meters (this is your 'vision radius')
+    if (walkedPath.length === 1) {
+      exploredArea = turf.buffer(turf.point(walkedPath[0]), 50, {
+        units: "meters",
+      });
+    } else {
+      exploredArea = turf.buffer(turf.lineString(walkedPath), 50, {
+        units: "meters",
+      });
+    }
+
+    // 3. Cut the buffered trail out of the world box
+    try {
+      const fogMask = turf.difference(worldBox, exploredArea);
+      currentMap.getSource("fog-source").setData(fogMask || worldBox);
+    } catch (error) {
+      console.error("Fog calculation error:", error);
+    }
+  }, [walkedPath]);
+
+  // 2. Camera Flights
   useEffect(() => {
     const currentMap = mapRef.current;
     if (!currentMap || !currentMap.isStyleLoaded()) return;
 
     const target = selectedCity
-      ? {
-          center: selectedCity.center,
-          zoom: 15,
-          pitch: 75,
-          bearing: -17.6,
-        }
-      : {
-          center: [-5.4, 32.2],
-          zoom: 5.5,
-          pitch: 0,
-          bearing: 0,
-        };
+      ? { center: selectedCity.center, zoom: 15, pitch: 75, bearing: -17.6 }
+      : { center: [-5.4, 32.2], zoom: 5.5, pitch: 0, bearing: 0 };
 
-    currentMap.flyTo({
-      ...target,
-      speed: 1.2,
-      essential: true,
-    });
-
-    if (onAnimationEnd) {
-      currentMap.once("moveend", onAnimationEnd);
-    }
+    currentMap.flyTo({ ...target, speed: 1.2, essential: true });
+    if (onAnimationEnd) currentMap.once("moveend", onAnimationEnd);
   }, [selectedCity]);
 
-  // 3. 🌟 Render BEAUTIFUL EMOJI PINS 🌟
+  // 3. WebGL Pins
   useEffect(() => {
     const currentMap = mapRef.current;
     if (!currentMap || !currentMap.isStyleLoaded()) return;
 
-    markersRef.current.forEach((marker) => marker.remove());
-    markersRef.current = [];
+    const geojson = {
+      type: "FeatureCollection",
+      features: displayedPins.map((pin) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
+        properties: {
+          id: pin.id || `${pin.lat}-${pin.lng}`,
+          icon: categoryIconMap?.[pin.category] || "placeholder.png",
+          ...pin,
+        },
+      })),
+    };
 
-    displayedPins.forEach((pin) => {
-      const categoryName = pin.category;
-      // Get the correct emoji, or default to a standard pin
-      const pinEmoji = categoryEmojiMap?.[categoryName] || "📍"; 
-
-      // --- Create the Beautiful DOM Marker ---
-      const markerWrapper = document.createElement("div");
-      // Tailwind classes for hover bouncing and crisp shadows
-      markerWrapper.className = "group cursor-pointer relative flex items-center justify-center transition-transform hover:scale-125 active:scale-95 pb-3";
-
-      // The Bubble
-      const bubble = document.createElement("div");
-      bubble.className = "w-10 h-10 bg-white rounded-full shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center justify-center text-xl border border-gray-100 z-10 font-sans";
-      bubble.innerText = pinEmoji;
-
-      // The Pointer (CSS Triangle pointing down)
-      const pointer = document.createElement("div");
-      pointer.className = "absolute bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-white z-0";
-
-      // Assemble
-      markerWrapper.appendChild(bubble);
-      markerWrapper.appendChild(pointer);
-
-      // Handle Click
-      markerWrapper.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onPinClick(pin);
+    if (!currentMap.getSource("pins-source")) {
+      currentMap.addSource("pins-source", {
+        type: "geojson",
+        data: geojson,
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 50,
       });
 
-      const marker = new mapboxgl.Marker(markerWrapper)
-        .setLngLat([pin.lng, pin.lat])
-        .addTo(currentMap);
+      currentMap.addLayer({
+        id: "clusters",
+        type: "circle",
+        source: "pins-source",
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": [
+            "step",
+            ["get", "point_count"],
+            "#2e3142",
+            10,
+            "#1c1d28",
+            30,
+            "#3b3e52",
+          ],
+          "circle-radius": ["step", ["get", "point_count"], 20, 10, 25, 30, 30],
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#d3bc8e",
+        },
+      });
 
-      markersRef.current.push(marker);
-    });
-  }, [displayedPins, categoryEmojiMap]);
+      currentMap.addLayer({
+        id: "cluster-count",
+        type: "symbol",
+        source: "pins-source",
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+          "text-size": 15,
+        },
+        paint: { "text-color": "#d3bc8e" },
+      });
 
-  // 4. Render Experience Routes
+      currentMap.addLayer({
+        id: "unclustered-point-bg",
+        type: "circle",
+        source: "pins-source",
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": "#2e3142",
+          "circle-radius": 14,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#d3bc8e",
+        },
+      });
+
+      currentMap.addLayer({
+        id: "unclustered-point",
+        type: "symbol",
+        source: "pins-source",
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": 0.05,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      });
+
+      currentMap.on(
+        "click",
+        ["unclustered-point", "unclustered-point-bg"],
+        (e) => {
+          const feature = e.features[0];
+          const clickedPinId = feature.properties.id;
+          const originalPin = pinsRef.current.find(
+            (p) => p.id === clickedPinId || `${p.lat}-${p.lng}` === clickedPinId
+          );
+          if (originalPin && onPinClick) onPinClick(originalPin);
+        }
+      );
+    } else {
+      currentMap.getSource("pins-source").setData(geojson);
+    }
+  }, [displayedPins, categoryIconMap]);
+
+  // 4. Experience Routes
   useEffect(() => {
     const currentMap = map.current;
     if (!currentMap || !currentMap.isStyleLoaded()) return;
@@ -173,9 +313,10 @@ const Map = ({
           source: "experience-route",
           layout: { "line-join": "round", "line-cap": "round" },
           paint: {
-            "line-color": "#3887be",
-            "line-width": 5,
-            "line-opacity": 0.75,
+            "line-color": "#d3bc8e",
+            "line-width": 4,
+            "line-opacity": 0.8,
+            "line-dasharray": [2, 2],
           },
         });
       }
@@ -186,16 +327,14 @@ const Map = ({
         const waypoints = experienceRoute.map((pin) => ({
           coordinates: [pin.lng, pin.lat],
         }));
-
         try {
           const response = await directionsClient
             .getDirections({
-              profile: "driving",
+              profile: "walking",
               waypoints: waypoints,
               geometries: "geojson",
             })
             .send();
-
           const routeGeoJSON = response.body.routes[0].geometry;
           source.setData({ type: "Feature", geometry: routeGeoJSON });
 
@@ -204,11 +343,10 @@ const Map = ({
             coordinates[0],
             coordinates[0]
           );
-          for (const coord of coordinates) {
-            bounds.extend(coord);
-          }
+          for (const coord of coordinates) bounds.extend(coord);
+
           currentMap.fitBounds(bounds, {
-            padding: { top: 100, bottom: 150, left: 450, right: 100 },
+            padding: { top: 100, bottom: 100, left: 100, right: 100 },
             pitch: 45,
             duration: 2500,
             essential: true,
@@ -223,67 +361,68 @@ const Map = ({
         });
       }
     };
-
     manageRoute();
   }, [experienceRoute]);
 
   // 5. Render User GPS Marker
   useEffect(() => {
     if (!map.current || !userLocation) return;
-
     if (userMarkerRef.current) {
       userMarkerRef.current.setLngLat(userLocation);
     } else {
       const markerElement = document.createElement("div");
-      // Optional: Style your user marker directly here if you don't have CSS
-      markerElement.className = "w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg";
-
+      markerElement.className =
+        "w-4 h-4 bg-[#e6ce9a] rounded-full border-2 border-[#1c1d28] shadow-[0_0_15px_rgba(230,206,154,0.6)]";
       userMarkerRef.current = new mapboxgl.Marker(markerElement)
         .setLngLat(userLocation)
         .addTo(map.current);
     }
   }, [userLocation]);
 
-  // 6. Render A-to-B Directions Route
+  // 🌟 6. RENDER PARTY MEMBER GPS MARKERS 🌟
   useEffect(() => {
-    const currentMap = map.current;
-    if (!currentMap || !currentMap.isStyleLoaded()) return;
+    if (!map.current) return;
 
-    if (!currentMap.getSource("directions-route")) {
-      currentMap.addSource("directions-route", {
-        type: "geojson",
-        data: {
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: [] },
-        },
-      });
-      currentMap.addLayer({
-        id: "directions-route-layer",
-        type: "line",
-        source: "directions-route",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": "#EFBF04",
-          "line-width": 5,
-          "line-opacity": 0.75,
-        },
-      });
-    }
+    const activeIds = partyLocations.map((p) => p.userId);
 
-    const source = currentMap.getSource("directions-route");
+    Object.keys(partyMarkersRef.current).forEach((userId) => {
+      if (!activeIds.includes(userId)) {
+        partyMarkersRef.current[userId].remove();
+        delete partyMarkersRef.current[userId];
+      }
+    });
 
-    if (directionsRoute && directionsRoute.length > 0) {
-      source.setData({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: directionsRoute },
-      });
-    } else {
-      source.setData({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: [] },
-      });
-    }
-  }, [directionsRoute]);
+    partyLocations.forEach((friend) => {
+      if (!partyMarkersRef.current[friend.userId]) {
+        const el = document.createElement("div");
+        el.className =
+          "w-10 h-10 rounded-full border-2 border-[#d3bc8e] shadow-[0_0_15px_rgba(211,188,142,0.6)] bg-[#1c1d28] overflow-hidden flex items-center justify-center relative group z-50";
+
+        const img = document.createElement("img");
+        img.src =
+          friend.avatar_url || "https://placehold.co/100/1c1d28/d3bc8e?text=?";
+        img.className = "w-full h-full object-cover";
+        el.appendChild(img);
+
+        const tooltip = document.createElement("div");
+        tooltip.className =
+          "absolute -top-8 bg-[#1c1d28] text-white text-xs font-bold px-2 py-1 rounded border border-[#3b3e52] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none";
+        tooltip.innerText = friend.username;
+        el.appendChild(tooltip);
+
+        const newMarker = new mapboxgl.Marker(el)
+          .setLngLat([friend.lng, friend.lat])
+          .addTo(map.current);
+
+        partyMarkersRef.current[friend.userId] = newMarker;
+      } else {
+        partyMarkersRef.current[friend.userId].setLngLat([
+          friend.lng,
+          friend.lat,
+        ]);
+      }
+    });
+  }, [partyLocations]);
 
   return (
     <div ref={mapContainer} className="absolute top-0 left-0 w-full h-full" />

@@ -1,17 +1,19 @@
 import { Stack } from "expo-router";
-import { Providers } from "./providers"; // <-- Use our new unified wrapper!
-import "./globals.css"; // <-- Fixed relative path
+import { Providers } from "./providers";
+import { Toaster } from "sonner"; // <-- 1. Import Toaster
+import "./globals.css";
 
 export default function RootLayout() {
   return (
     <Providers>
-      {/* The Stack is the mobile navigation router */}
-      <Stack 
-        screenOptions={{ 
-          headerShown: false, // We are building custom headers/overlays
-          contentStyle: { backgroundColor: '#111827' } // Tailwind gray-900 to match your dark theme
-        }} 
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "#111827" },
+        }}
       />
+      {/* 2. Add the global Toaster overlaid on the app */}
+      <Toaster theme="dark" position="top-center" richColors closeButton />
     </Providers>
   );
 }
