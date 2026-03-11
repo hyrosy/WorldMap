@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image as RNImage,
+  Platform,
 } from "react-native";
 import {
   X,
@@ -16,11 +17,10 @@ import {
   Image as ImageIcon,
   Mic,
   Phone,
-  Video,
+  Video as VideoIcon,
   Square,
   Play,
   ArrowLeft,
-  MessageCircle,
   Users,
   Globe,
   PhoneCall,
@@ -29,6 +29,30 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
+import * as ImagePicker from "expo-image-picker";
+import { Audio, Video as ExpoVideo } from "expo-av";
+
+// 🌟 DYNAMIC WEBRTC IMPORTS (CROSS-PLATFORM MAGIC) 🌟
+let RTCPeerConnection,
+  RTCIceCandidate,
+  RTCSessionDescription,
+  mediaDevices,
+  RTCView;
+
+if (Platform.OS !== "web") {
+  const webrtc = require("react-native-webrtc");
+  RTCPeerConnection = webrtc.RTCPeerConnection;
+  RTCIceCandidate = webrtc.RTCIceCandidate;
+  RTCSessionDescription = webrtc.RTCSessionDescription;
+  mediaDevices = webrtc.mediaDevices;
+  RTCView = webrtc.RTCView;
+} else {
+  RTCPeerConnection =
+    window.RTCPeerConnection || window.webkitRTCPeerConnection;
+  RTCIceCandidate = window.RTCIceCandidate;
+  RTCSessionDescription = window.RTCSessionDescription;
+  mediaDevices = navigator.mediaDevices;
+}
 
 const ICE_SERVERS = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
@@ -41,81 +65,104 @@ export default function ChatHub({
 }) {
   const { session } = useAuth();
 
-  // NAVIGATION & CHAT STATES
-  const [activeView, setActiveView] = useState("inbox"); // 'inbox' | 'chat'
+  const [activeView, setActiveView] = useState("inbox");
   const [activeChat, setActiveChat] = useState(null);
   const [messagesByChat, setMessagesByChat] = useState({});
   const [inputText, setInputText] = useState("");
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // 🌟 REAL DATA STATES 🌟
   const [realDMs, setRealDMs] = useState([]);
   const [isLoadingDMs, setIsLoadingDMs] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
-  // VOICE NOTE STATES
-  const [isRecording, setIsRecording] = useState(false);
+  const [recording, setRecording] = useState(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
+  const [playingAudio, setPlayingAudio] = useState(null);
   const timerRef = useRef(null);
-
   const scrollViewRef = useRef();
-  const fileInputRef = useRef(null);
 
-  // WEBRTC CALL STATES
+  // 🌟 CALL STATES 🌟
   const [callState, setCallState] = useState("idle");
   const [callType, setCallType] = useState("Video");
   const [incomingCallData, setIncomingCallData] = useState(null);
 
+  // Web Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+
+  // Native Mobile Stream States
+  const [localStream, setLocalStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+
   const pcRef = useRef(null);
-  const localStreamRef = useRef(null);
   const signalingChannelRef = useRef(null);
 
-  // 🌟 1. FETCH REAL PROFILES FOR INBOX 🌟
+  // --- 1. FETCH INBOX ---
   useEffect(() => {
     if (!session?.user || !isOpen) return;
 
-    const fetchConversations = async () => {
+    const fetchInboxData = async () => {
       setIsLoadingDMs(true);
-
-      // Fetch all users except the current logged-in user
-      const { data: users, error } = await supabase
+      const { data: users } = await supabase
         .from("profiles")
         .select("id, username, avatar_url")
         .neq("id", session.user.id);
+      const { data: messages } = await supabase
+        .from("messages")
+        .select("*")
+        .or(`receiver_id.eq.${session.user.id},sender_id.eq.${session.user.id}`)
+        .order("created_at", { ascending: false });
 
-      if (!error && users) {
-        const formattedDMs = users.map((user) => ({
-          id: user.id,
-          name: user.username || "Traveler",
-          avatar:
-            user.avatar_url ||
-            `https://placehold.co/100/1c1d28/d3bc8e?text=${
-              user.username ? user.username[0].toUpperCase() : "?"
-            }`,
-          lastMessage: "Tap to view messages...",
-        }));
+      if (users) {
+        const formattedDMs = users.map((user) => {
+          const dmHistory =
+            messages?.filter(
+              (m) =>
+                (m.sender_id === session.user.id &&
+                  m.receiver_id === user.id) ||
+                (m.sender_id === user.id && m.receiver_id === session.user.id)
+            ) || [];
+          const lastMsg = dmHistory[0];
+          const unreadCount = dmHistory.filter(
+            (m) => m.receiver_id === session.user.id && !m.is_read
+          ).length;
+
+          let lastMessageText = "Tap to view messages...";
+          if (lastMsg) {
+            if (lastMsg.msg_type === "image") lastMessageText = "📷 Image";
+            else if (lastMsg.msg_type === "audio")
+              lastMessageText = "🎤 Voice Note";
+            else if (lastMsg.msg_type === "location")
+              lastMessageText = "📍 Shared Location";
+            else lastMessageText = lastMsg.content;
+          }
+
+          return {
+            id: user.id,
+            name: user.username || "Traveler",
+            avatar:
+              user.avatar_url ||
+              `https://placehold.co/100/1c1d28/d3bc8e?text=${
+                user.username ? user.username[0].toUpperCase() : "?"
+              }`,
+            lastMessage: lastMessageText,
+            unreadCount: unreadCount,
+          };
+        });
         setRealDMs(formattedDMs);
       }
       setIsLoadingDMs(false);
     };
+    fetchInboxData();
+  }, [session, isOpen, activeView]);
 
-    fetchConversations();
-  }, [session, isOpen]);
-
-  // 🌟 2. FETCH REAL CHAT HISTORY WHEN A ROOM OPENS 🌟
+  // --- 2. CHAT HISTORY ---
   useEffect(() => {
     if (!activeChat || !session?.user) return;
 
     const fetchMessages = async () => {
       setIsLoadingMessages(true);
-
-      // 🌟 FIXED FOREIGN KEY AMBIGUITY HERE 🌟
-      // We explicitly tell Supabase to join the profile of the SENDER
       let query = supabase
         .from("messages")
         .select(
@@ -124,21 +171,22 @@ export default function ChatHub({
         .order("created_at", { ascending: true });
 
       if (activeChat.type === "world") {
-        const cleanWorldId = activeChat.id.replace("world_", "");
-        query = query.eq("world_id", cleanWorldId);
+        query = query.eq("world_id", activeChat.id.replace("world_", ""));
       } else {
         query = query
           .is("world_id", null)
           .or(
             `and(sender_id.eq.${session.user.id},receiver_id.eq.${activeChat.id}),and(sender_id.eq.${activeChat.id},receiver_id.eq.${session.user.id})`
           );
+        await supabase
+          .from("messages")
+          .update({ is_read: true })
+          .eq("receiver_id", session.user.id)
+          .eq("sender_id", activeChat.id);
       }
 
-      const { data, error } = await query;
-
-      if (error) {
-        console.error("Error fetching messages:", error);
-      } else if (data) {
+      const { data } = await query;
+      if (data) {
         const formattedMessages = data.map((msg) => ({
           id: msg.id,
           type: msg.msg_type || "text",
@@ -153,7 +201,6 @@ export default function ChatHub({
           }),
           isMe: msg.sender_id === session.user.id,
         }));
-
         setMessagesByChat((prev) => ({
           ...prev,
           [activeChat.id]: formattedMessages,
@@ -168,7 +215,6 @@ export default function ChatHub({
 
     fetchMessages();
 
-    // 🌟 REALTIME: LISTEN FOR NEW INCOMING MESSAGES 🌟
     const channel = supabase
       .channel(`chat_room_${activeChat.id}`)
       .on(
@@ -176,25 +222,21 @@ export default function ChatHub({
         { event: "INSERT", schema: "public", table: "messages" },
         async (payload) => {
           const msg = payload.new;
-
-          // Ignore my own messages (already added via Optimistic UI)
           if (msg.sender_id === session.user.id) return;
 
-          // Ensure the real-time message actually belongs in the currently open window!
           let belongsToChat = false;
           if (
             activeChat.type === "world" &&
             msg.world_id === activeChat.id.replace("world_", "")
-          ) {
+          )
             belongsToChat = true;
-          } else if (
+          else if (
             activeChat.type === "dm" &&
             !msg.world_id &&
             (msg.sender_id === activeChat.id ||
               msg.receiver_id === activeChat.id)
-          ) {
+          )
             belongsToChat = true;
-          }
 
           if (belongsToChat) {
             const { data: profileData } = await supabase
@@ -202,7 +244,6 @@ export default function ChatHub({
               .select("username")
               .eq("id", msg.sender_id)
               .single();
-
             const incomingMsg = {
               id: msg.id,
               type: msg.msg_type || "text",
@@ -217,11 +258,16 @@ export default function ChatHub({
               }),
               isMe: false,
             };
-
             setMessagesByChat((prev) => ({
               ...prev,
               [activeChat.id]: [...(prev[activeChat.id] || []), incomingMsg],
             }));
+
+            if (activeChat.type === "dm")
+              await supabase
+                .from("messages")
+                .update({ is_read: true })
+                .eq("id", msg.id);
             setTimeout(
               () => scrollViewRef.current?.scrollToEnd({ animated: true }),
               100
@@ -231,31 +277,22 @@ export default function ChatHub({
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [activeChat, session]);
 
-  // 🌟 3. INSERT MESSAGE INTO DATABASE 🌟
   const sendMessageToDB = async (payload) => {
     if (!activeChat || !session?.user) return;
-
-    // A. Optimistic UI Update (Shows instantly)
     const tempMsg = {
       id: Date.now(),
       type: payload.type,
-      sender: session.user.user_metadata?.username || "You",
+      sender: "You",
       text: payload.text,
       mediaUrl: payload.mediaUrl,
       lat: payload.lat,
       lng: payload.lng,
-      time: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      time: "Now",
       isMe: true,
     };
-
     setMessagesByChat((prev) => ({
       ...prev,
       [activeChat.id]: [...(prev[activeChat.id] || []), tempMsg],
@@ -265,29 +302,150 @@ export default function ChatHub({
       100
     );
 
-    // B. Save to Database
-    const cleanWorldId =
-      activeChat.type === "world" ? activeChat.id.replace("world_", "") : null;
-
     const insertData = {
       sender_id: session.user.id,
-      receiver_id: activeChat.type === "dm" ? activeChat.id : null,
-      world_id: cleanWorldId,
       msg_type: payload.type,
-      content: payload.text || null,
-      media_url: payload.mediaUrl || null,
-      lat: payload.lat || null,
-      lng: payload.lng || null,
+      is_read: false,
     };
+    if (activeChat.type === "dm") insertData.receiver_id = activeChat.id;
+    else if (activeChat.type === "world")
+      insertData.world_id = activeChat.id.replace("world_", "");
 
-    const { error } = await supabase.from("messages").insert([insertData]);
-    if (error) {
-      console.error(error);
-      toast.error("Failed to deliver message.");
+    if (payload.text) insertData.content = payload.text;
+    if (payload.mediaUrl) insertData.media_url = payload.mediaUrl;
+    if (payload.lat) insertData.lat = payload.lat;
+    if (payload.lng) insertData.lng = payload.lng;
+    if (!insertData.content) insertData.content = "";
+
+    await supabase.from("messages").insert([insertData]);
+  };
+
+  const uploadToSupabase = async (uri, fileType) => {
+    const extension = uri.split(".").pop();
+    const filePath = `uploads/${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(7)}.${extension}`;
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    await supabase.storage
+      .from("chat-media")
+      .upload(filePath, blob, { contentType: fileType });
+    return supabase.storage.from("chat-media").getPublicUrl(filePath).data
+      .publicUrl;
+  };
+
+  const triggerFilePicker = async () => {
+    setIsAttachmentOpen(false);
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      setIsUploading(true);
+      try {
+        const asset = result.assets[0];
+        const isVideo = asset.type === "video";
+        const publicUrl = await uploadToSupabase(
+          asset.uri,
+          isVideo ? "video/mp4" : "image/jpeg"
+        );
+        sendMessageToDB({
+          type: isVideo ? "video" : "image",
+          mediaUrl: publicUrl,
+        });
+      } catch (error) {
+        toast.error("Upload failed.");
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
-  // INITIALIZE WEBRTC SIGNALING
+  const toggleRecording = async () => {
+    if (recording) {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+      clearInterval(timerRef.current);
+      setRecordingDuration(0);
+      setIsUploading(true);
+      try {
+        const publicUrl = await uploadToSupabase(uri, "audio/m4a");
+        sendMessageToDB({ type: "audio", mediaUrl: publicUrl });
+      } catch (err) {
+      } finally {
+        setIsUploading(false);
+      }
+    } else {
+      try {
+        await Audio.requestPermissionsAsync();
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+        const { recording: newRecording } = await Audio.Recording.createAsync(
+          Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        setRecording(newRecording);
+        setIsAttachmentOpen(false);
+        timerRef.current = setInterval(
+          () => setRecordingDuration((prev) => prev + 1),
+          1000
+        );
+      } catch (err) {}
+    }
+  };
+
+  const playSound = async (uri) => {
+    try {
+      if (playingAudio) await playingAudio.unloadAsync();
+      const { sound } = await Audio.Sound.createAsync({ uri });
+      setPlayingAudio(sound);
+      await sound.playAsync();
+    } catch (err) {}
+  };
+
+  // 🌟 LOCATION HANDLERS 🌟
+  const handleShareLocation = () => {
+    setIsAttachmentOpen(false);
+    if (!userLocation) {
+      toast.error("GPS signal lost.");
+      return;
+    }
+    sendMessageToDB({
+      type: "location",
+      lat: userLocation[1],
+      lng: userLocation[0],
+    });
+    toast.success("Location dropped!");
+  };
+
+  const handleFlyToLocation = (lng, lat) => {
+    if (mapRef && mapRef.current) {
+      if (Platform.OS === "web") {
+        mapRef.current.flyTo({
+          center: [lng, lat],
+          zoom: 16,
+          pitch: 60,
+          essential: true,
+        });
+      } else {
+        // Native fallback (if using @rnmapbox/maps)
+        if (mapRef.current.setCamera) {
+          mapRef.current.setCamera({
+            centerCoordinate: [lng, lat],
+            zoomLevel: 16,
+            pitch: 60,
+            animationDuration: 2000,
+          });
+        }
+      }
+      onClose();
+    }
+  };
+
+  // 🌟 NATIVE + WEB CALL LOGIC 🌟
   useEffect(() => {
     if (!session?.user) return;
 
@@ -303,6 +461,7 @@ export default function ChatHub({
           callerAvatar,
           callType: incomingType,
         } = payload;
+
         if (type === "offer") {
           setIncomingCallData({
             callerId,
@@ -338,10 +497,13 @@ export default function ChatHub({
       pcRef.current.close();
       pcRef.current = null;
     }
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
+    if (localStream) {
+      if (Platform.OS === "web")
+        localStream.getTracks().forEach((track) => track.stop());
+      else localStream.release(); // Native cleanup
     }
+    setLocalStream(null);
+    setRemoteStream(null);
     setCallState("idle");
     setIncomingCallData(null);
   };
@@ -354,7 +516,6 @@ export default function ChatHub({
     });
   };
 
-  // INITIATE CALL
   const handleStartCall = async (type) => {
     if (activeChat.type === "world") {
       toast.info("Group calls coming in Phase 4!");
@@ -365,17 +526,24 @@ export default function ChatHub({
     const targetId = activeChat.id;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await mediaDevices.getUserMedia({
         video: type === "Video",
         audio: true,
       });
-      localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      setLocalStream(stream);
+
+      if (Platform.OS === "web") {
+        setTimeout(() => {
+          if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+        }, 100);
+      }
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
       pcRef.current = pc;
 
+      // Add tracks to connection
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
       pc.onicecandidate = (e) => {
         if (e.candidate)
           sendSignal(targetId, {
@@ -383,9 +551,17 @@ export default function ChatHub({
             candidate: e.candidate,
           });
       };
+
       pc.ontrack = (e) => {
-        if (remoteVideoRef.current)
-          remoteVideoRef.current.srcObject = e.streams[0];
+        if (e.streams && e.streams[0]) {
+          setRemoteStream(e.streams[0]);
+          if (Platform.OS === "web") {
+            setTimeout(() => {
+              if (remoteVideoRef.current)
+                remoteVideoRef.current.srcObject = e.streams[0];
+            }, 100);
+          }
+        }
       };
 
       const offer = await pc.createOffer();
@@ -395,10 +571,9 @@ export default function ChatHub({
         type: "offer",
         sdp: offer,
         callType: type,
-        callerName: session.user.user_metadata?.username || "Traveler",
+        callerName: session.user.user_metadata?.username,
         callerAvatar:
-          session.user.user_metadata?.avatar_url ||
-          "https://placehold.co/100/1c1d28/d3bc8e?text=?",
+          session.user.user_metadata?.avatar_url || "https://placehold.co/100",
       });
     } catch (err) {
       toast.error("Could not access camera/mic.");
@@ -406,21 +581,26 @@ export default function ChatHub({
     }
   };
 
-  // ACCEPT CALL
   const acceptCall = async () => {
     setCallState("connected");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await mediaDevices.getUserMedia({
         video: incomingCallData.incomingType === "Video",
         audio: true,
       });
-      localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      setLocalStream(stream);
+
+      if (Platform.OS === "web") {
+        setTimeout(() => {
+          if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+        }, 100);
+      }
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
       pcRef.current = pc;
 
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
       pc.onicecandidate = (e) => {
         if (e.candidate)
           sendSignal(incomingCallData.callerId, {
@@ -428,9 +608,17 @@ export default function ChatHub({
             candidate: e.candidate,
           });
       };
+
       pc.ontrack = (e) => {
-        if (remoteVideoRef.current)
-          remoteVideoRef.current.srcObject = e.streams[0];
+        if (e.streams && e.streams[0]) {
+          setRemoteStream(e.streams[0]);
+          if (Platform.OS === "web") {
+            setTimeout(() => {
+              if (remoteVideoRef.current)
+                remoteVideoRef.current.srcObject = e.streams[0];
+            }, 100);
+          }
+        }
       };
 
       await pc.setRemoteDescription(
@@ -446,180 +634,19 @@ export default function ChatHub({
     }
   };
 
-  // END CALL
-  const handleEndCall = () => {
-    const targetId = activeChat?.id || incomingCallData?.callerId;
-    if (targetId) sendSignal(targetId, { type: "end-call" });
-    cleanupCall();
-  };
-
-  // --- CHAT UI LOGIC ---
-  const handleOpenChat = (chatData) => {
-    setActiveChat(chatData);
-    setActiveView("chat");
-  };
-
-  const handleBackToInbox = () => {
-    setActiveView("inbox");
-    setActiveChat(null);
-    setIsAttachmentOpen(false);
-  };
-
-  const uploadToSupabase = async (fileOrBlob, extension, fileType) => {
-    const fileName = `${Date.now()}-${Math.random()
-      .toString(36)
-      .substring(7)}.${extension}`;
-    const filePath = `uploads/${fileName}`;
-    const { error } = await supabase.storage
-      .from("chat-media")
-      .upload(filePath, fileOrBlob, { contentType: fileType });
-    if (error) throw error;
-    const { data: urlData } = supabase.storage
-      .from("chat-media")
-      .getPublicUrl(filePath);
-    return urlData.publicUrl;
-  };
-
-  // 🌟 MAP HANDLERS TO DATABASE 🌟
-  const handleSendMessage = () => {
-    if (!inputText.trim()) return;
-    sendMessageToDB({ type: "text", text: inputText });
-    setInputText("");
-  };
-
-  const handleShareLocation = () => {
-    setIsAttachmentOpen(false);
-    if (!userLocation) {
-      toast.error("GPS signal lost.");
-      return;
-    }
-    sendMessageToDB({
-      type: "location",
-      lat: userLocation[1],
-      lng: userLocation[0],
-    });
-    toast.success("Location dropped in chat!");
-  };
-
-  const handleFlyToLocation = (lng, lat) => {
-    if (mapRef && mapRef.current) {
-      mapRef.current.flyTo({
-        center: [lng, lat],
-        zoom: 16,
-        pitch: 60,
-        essential: true,
-      });
-      onClose();
-    }
-  };
-
-  const triggerFilePicker = () => {
-    setIsAttachmentOpen(false);
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    setIsUploading(true);
-    try {
-      const isVideo = file.type.startsWith("video/");
-      const publicUrl = await uploadToSupabase(
-        file,
-        file.name.split(".").pop(),
-        file.type
-      );
-      sendMessageToDB({
-        type: isVideo ? "video" : "image",
-        mediaUrl: publicUrl,
-      });
-    } catch (error) {
-      toast.error("Upload failed.");
-    } finally {
-      setIsUploading(false);
-      event.target.value = null;
-    }
-  };
-
-  const toggleRecording = async () => {
-    if (isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(timerRef.current);
-      setRecordingDuration(0);
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) audioChunksRef.current.push(e.data);
-        };
-
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, {
-            type: "audio/webm",
-          });
-          setIsUploading(true);
-          try {
-            const publicUrl = await uploadToSupabase(
-              audioBlob,
-              "webm",
-              "audio/webm"
-            );
-            sendMessageToDB({ type: "audio", mediaUrl: publicUrl });
-          } catch (error) {
-            toast.error("Upload failed.");
-          } finally {
-            setIsUploading(false);
-            stream.getTracks().forEach((t) => t.stop());
-          }
-        };
-
-        mediaRecorder.start();
-        setIsRecording(true);
-        setIsAttachmentOpen(false);
-        timerRef.current = setInterval(() => {
-          setRecordingDuration((prev) => prev + 1);
-        }, 1000);
-      } catch (err) {
-        toast.error("Microphone denied.");
-      }
-    }
-  };
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
-
   if (!isOpen) return null;
 
   return (
     <View className="absolute top-0 right-0 w-full sm:w-[400px] h-full bg-[#1c1d28] z-50 flex-col shadow-2xl border-l border-[#3b3e52] animate-in slide-in-from-right duration-300 overflow-hidden">
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: "none" }}
-        accept="image/*,video/*"
-        onChange={handleFileChange}
-      />
-
-      {/* 🌟 WEBRTC CALL OVERLAY 🌟 */}
+      {/* 🌟 UNIVERSAL WEBRTC CALL OVERLAY 🌟 */}
       {callState !== "idle" && (
         <View className="absolute inset-0 z-[100] bg-[#1c1d28] flex-col animate-in fade-in zoom-in-95 duration-300">
-          {/* Ringing State (Incoming) */}
           {callState === "ringing" && incomingCallData && (
             <View className="flex-1 items-center justify-center p-6">
               <View className="w-32 h-32 rounded-full border-4 border-[#d3bc8e] overflow-hidden mb-6 shadow-[0_0_40px_rgba(211,188,142,0.4)] animate-pulse">
-                <img
-                  src={incomingCallData.callerAvatar}
+                <RNImage
+                  source={{ uri: incomingCallData.callerAvatar }}
                   className="w-full h-full object-cover bg-[#2e3142]"
-                  alt="Caller"
                 />
               </View>
               <Text className="text-white text-2xl font-black mb-2">
@@ -628,17 +655,16 @@ export default function ChatHub({
               <Text className="text-gray-400 font-medium tracking-wide mb-12">
                 Incoming {incomingCallData.incomingType} Call...
               </Text>
-
               <View className="flex-row gap-6 w-full justify-center">
                 <TouchableOpacity
-                  onPress={handleEndCall}
-                  className="w-16 h-16 bg-red-500 rounded-full items-center justify-center shadow-lg hover:bg-red-600 transition-transform active:scale-90"
+                  onPress={cleanupCall}
+                  className="w-16 h-16 bg-red-500 rounded-full items-center justify-center"
                 >
                   <PhoneOff size={28} color="white" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={acceptCall}
-                  className="w-16 h-16 bg-green-500 rounded-full items-center justify-center shadow-lg hover:bg-green-600 transition-transform active:scale-90"
+                  className="w-16 h-16 bg-green-500 rounded-full items-center justify-center"
                 >
                   <PhoneCall size={28} color="white" />
                 </TouchableOpacity>
@@ -646,7 +672,6 @@ export default function ChatHub({
             </View>
           )}
 
-          {/* Calling State (Outgoing) */}
           {callState === "calling" && (
             <View className="flex-1 items-center justify-center p-6">
               <View className="w-24 h-24 rounded-full border-2 border-gray-600 overflow-hidden mb-6 opacity-50 animate-pulse">
@@ -664,37 +689,62 @@ export default function ChatHub({
                 Waiting for answer...
               </Text>
               <TouchableOpacity
-                onPress={handleEndCall}
-                className="w-16 h-16 bg-red-500 rounded-full items-center justify-center shadow-lg hover:bg-red-600 transition-transform active:scale-90"
+                onPress={cleanupCall}
+                className="w-16 h-16 bg-red-500 rounded-full items-center justify-center"
               >
                 <PhoneOff size={28} color="white" />
               </TouchableOpacity>
             </View>
           )}
 
-          {/* Connected State (Active Call) */}
           {callState === "connected" && (
             <View className="flex-1 bg-black relative">
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-                style={{ display: callType === "Video" ? "block" : "none" }}
-              />
-              <View className="absolute top-12 right-4 w-28 h-40 bg-[#1c1d28] rounded-xl border-2 border-[#d3bc8e] overflow-hidden shadow-2xl">
+              {/* REMOTE VIDEO (Web vs Native) */}
+              {Platform.OS === "web" ? (
                 <video
-                  ref={localVideoRef}
+                  ref={remoteVideoRef}
                   autoPlay
                   playsInline
-                  muted
                   className="w-full h-full object-cover"
-                  style={{ transform: "scaleX(-1)" }}
+                  style={{ display: callType === "Video" ? "block" : "none" }}
                 />
+              ) : (
+                remoteStream &&
+                callType === "Video" && (
+                  <RTCView
+                    streamURL={remoteStream.toURL()}
+                    style={{ flex: 1 }}
+                    objectFit="cover"
+                  />
+                )
+              )}
+
+              {/* LOCAL PIP VIDEO (Web vs Native) */}
+              <View className="absolute top-12 right-4 w-28 h-40 bg-[#1c1d28] rounded-xl border-2 border-[#d3bc8e] overflow-hidden shadow-2xl z-50">
+                {Platform.OS === "web" ? (
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                    style={{ transform: "scaleX(-1)" }}
+                  />
+                ) : (
+                  localStream && (
+                    <RTCView
+                      streamURL={localStream.toURL()}
+                      style={{ flex: 1 }}
+                      objectFit="cover"
+                      mirror={true}
+                    />
+                  )
+                )}
               </View>
+
               {callType === "Voice" && (
                 <View className="absolute inset-0 flex items-center justify-center bg-[#1c1d28]">
-                  <View className="w-32 h-32 rounded-full bg-[#2e3142] border border-[#3b3e52] items-center justify-center shadow-[0_0_50px_rgba(211,188,142,0.2)]">
+                  <View className="w-32 h-32 rounded-full bg-[#2e3142] border border-[#3b3e52] items-center justify-center">
                     <Phone
                       size={48}
                       color="#d3bc8e"
@@ -704,22 +754,23 @@ export default function ChatHub({
                   <Text className="text-white text-xl font-bold mt-6">
                     {activeChat?.name || incomingCallData?.callerName}
                   </Text>
-                  <Text className="text-green-400 font-mono mt-2">00:00</Text>
                 </View>
               )}
-              <View className="absolute bottom-10 left-0 w-full flex-row justify-center items-center gap-6">
+
+              {/* Call Controls */}
+              <View className="absolute bottom-10 left-0 w-full flex-row justify-center items-center gap-6 z-50">
                 <TouchableOpacity className="w-14 h-14 bg-[#2e3142]/80 backdrop-blur-md rounded-full items-center justify-center border border-[#3b3e52]">
                   <Mic size={24} color="white" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={handleEndCall}
-                  className="w-16 h-16 bg-red-500 rounded-full items-center justify-center shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:bg-red-600 transition-transform active:scale-90"
+                  onPress={cleanupCall}
+                  className="w-16 h-16 bg-red-500 rounded-full items-center justify-center shadow-[0_0_20px_rgba(239,68,68,0.4)]"
                 >
                   <PhoneOff size={28} color="white" />
                 </TouchableOpacity>
                 {callType === "Video" && (
                   <TouchableOpacity className="w-14 h-14 bg-[#2e3142]/80 backdrop-blur-md rounded-full items-center justify-center border border-[#3b3e52]">
-                    <Video size={24} color="white" />
+                    <VideoIcon size={24} color="white" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -750,16 +801,17 @@ export default function ChatHub({
                   Active World
                 </Text>
                 <TouchableOpacity
-                  onPress={() =>
-                    handleOpenChat({
+                  onPress={() => {
+                    setActiveChat({
                       id: `world_${currentWorld.id}`,
                       name: `${currentWorld.name} Lobby`,
                       type: "world",
-                    })
-                  }
-                  className="flex-row items-center p-4 bg-[#2e3142] border border-[#d3bc8e]/50 rounded-2xl shadow-lg active:scale-95 transition-transform"
+                    });
+                    setActiveView("chat");
+                  }}
+                  className="flex-row items-center p-4 bg-[#2e3142] border border-[#d3bc8e]/50 rounded-2xl shadow-lg"
                 >
-                  <View className="w-12 h-12 rounded-full bg-[#1c1d28] border-2 border-[#d3bc8e] items-center justify-center shadow-[0_0_15px_rgba(211,188,142,0.4)]">
+                  <View className="w-12 h-12 rounded-full bg-[#1c1d28] border-2 border-[#d3bc8e] items-center justify-center">
                     <Globe size={24} color="#d3bc8e" />
                   </View>
                   <View className="ml-4 flex-1">
@@ -777,7 +829,6 @@ export default function ChatHub({
             <Text className="text-gray-500 font-bold text-xs uppercase tracking-widest mb-3 ml-2">
               Direct Messages
             </Text>
-
             {isLoadingDMs ? (
               <ActivityIndicator
                 color="#d3bc8e"
@@ -785,22 +836,18 @@ export default function ChatHub({
                 className="mt-4"
               />
             ) : realDMs.length === 0 ? (
-              <Text className="text-gray-500 text-center mt-4 font-medium">
+              <Text className="text-gray-500 text-center mt-4">
                 No other travelers found.
               </Text>
             ) : (
               realDMs.map((dm) => (
                 <TouchableOpacity
                   key={dm.id}
-                  onPress={() =>
-                    handleOpenChat({
-                      id: dm.id,
-                      name: dm.name,
-                      type: "dm",
-                      avatar: dm.avatar,
-                    })
-                  }
-                  className="flex-row items-center p-4 bg-[#1c1d28] hover:bg-[#2e3142] border-b border-[#3b3e52] active:bg-[#3b3e52] transition-colors"
+                  onPress={() => {
+                    setActiveChat({ id: dm.id, name: dm.name, type: "dm" });
+                    setActiveView("chat");
+                  }}
+                  className="flex-row items-center p-4 bg-[#1c1d28] border-b border-[#3b3e52]"
                 >
                   <RNImage
                     source={{ uri: dm.avatar }}
@@ -808,12 +855,27 @@ export default function ChatHub({
                   />
                   <View className="ml-4 flex-1">
                     <View className="flex-row justify-between items-center mb-1">
-                      <Text className="text-white font-bold text-base">
+                      <Text
+                        className={`font-bold text-base ${
+                          dm.unreadCount > 0 ? "text-white" : "text-gray-300"
+                        }`}
+                      >
                         {dm.name}
                       </Text>
+                      {dm.unreadCount > 0 && (
+                        <View className="bg-red-500 rounded-full w-5 h-5 items-center justify-center">
+                          <Text className="text-white font-bold text-[10px]">
+                            {dm.unreadCount}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                     <Text
-                      className="text-gray-400 text-sm truncate"
+                      className={`${
+                        dm.unreadCount > 0
+                          ? "text-white font-bold"
+                          : "text-gray-500"
+                      } text-sm truncate`}
                       numberOfLines={1}
                     >
                       {dm.lastMessage}
@@ -832,8 +894,11 @@ export default function ChatHub({
           <View className="flex-row justify-between items-center px-4 py-4 bg-[#2e3142] border-b border-[#3b3e52] pt-12 shadow-md">
             <View className="flex-row items-center gap-3">
               <TouchableOpacity
-                onPress={handleBackToInbox}
-                className="p-2 -ml-2 rounded-full hover:bg-[#3b3e52]"
+                onPress={() => {
+                  setActiveView("inbox");
+                  setActiveChat(null);
+                }}
+                className="p-2 -ml-2 rounded-full"
               >
                 <ArrowLeft size={20} color="#d3bc8e" />
               </TouchableOpacity>
@@ -848,20 +913,19 @@ export default function ChatHub({
                 </Text>
               </View>
             </View>
-
             {activeChat.type === "dm" && (
               <View className="flex-row items-center gap-2">
                 <TouchableOpacity
                   onPress={() => handleStartCall("Voice")}
-                  className="w-10 h-10 bg-[#1c1d28] rounded-full items-center justify-center border border-[#3b3e52] hover:border-[#d3bc8e]"
+                  className="w-10 h-10 bg-[#1c1d28] rounded-full items-center justify-center border border-[#3b3e52]"
                 >
                   <Phone size={18} color="#d3bc8e" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleStartCall("Video")}
-                  className="w-10 h-10 bg-[#1c1d28] rounded-full items-center justify-center border border-[#3b3e52] hover:border-[#d3bc8e]"
+                  className="w-10 h-10 bg-[#1c1d28] rounded-full items-center justify-center border border-[#3b3e52]"
                 >
-                  <Video size={18} color="#d3bc8e" />
+                  <VideoIcon size={18} color="#d3bc8e" />
                 </TouchableOpacity>
               </View>
             )}
@@ -880,7 +944,6 @@ export default function ChatHub({
                 className="mb-4"
               />
             )}
-
             {(messagesByChat[activeChat.id] || []).map((msg) => (
               <View
                 key={msg.id}
@@ -895,7 +958,6 @@ export default function ChatHub({
                     </Text>
                   )}
                 </View>
-
                 <View
                   className={`p-3 rounded-2xl ${
                     msg.isMe
@@ -912,10 +974,12 @@ export default function ChatHub({
                       {msg.text}
                     </Text>
                   )}
-
                   {msg.type === "location" && (
                     <TouchableOpacity
-                      onPress={() => handleFlyToLocation(msg.lng, msg.lat)}
+                      onPress={() => {
+                        if (Platform.OS === "web")
+                          handleFlyToLocation(msg.lng, msg.lat);
+                      }}
                       className="active:opacity-80"
                     >
                       <View className="flex-row items-center gap-3 bg-[#1c1d28]/20 p-2 rounded-xl mb-1">
@@ -948,37 +1012,46 @@ export default function ChatHub({
                       </View>
                     </TouchableOpacity>
                   )}
-
                   {msg.type === "image" && (
-                    <div className="rounded-xl overflow-hidden max-w-[200px] border border-[#1c1d28]/20">
-                      <img
-                        src={msg.mediaUrl}
-                        alt="Upload"
-                        className="w-full h-auto object-cover"
-                      />
-                    </div>
+                    <RNImage
+                      source={{ uri: msg.mediaUrl }}
+                      style={{ width: 200, height: 200, borderRadius: 12 }}
+                      resizeMode="cover"
+                    />
                   )}
                   {msg.type === "video" && (
-                    <div className="rounded-xl overflow-hidden max-w-[220px] bg-black border border-[#1c1d28]/20">
-                      <video
-                        src={msg.mediaUrl}
-                        controls
-                        className="w-full h-auto"
-                      />
-                    </div>
+                    <ExpoVideo
+                      source={{ uri: msg.mediaUrl }}
+                      style={{
+                        width: 220,
+                        height: 300,
+                        borderRadius: 12,
+                        backgroundColor: "black",
+                      }}
+                      useNativeControls
+                      resizeMode="contain"
+                    />
                   )}
                   {msg.type === "audio" && (
-                    <div
-                      className={`p-1 rounded-full ${
+                    <TouchableOpacity
+                      onPress={() => playSound(msg.mediaUrl)}
+                      className={`flex-row items-center gap-3 p-2 rounded-full ${
                         msg.isMe ? "bg-[#1c1d28]/10" : "bg-[#1c1d28]"
                       }`}
                     >
-                      <audio
-                        src={msg.mediaUrl}
-                        controls
-                        className="h-10 max-w-[200px]"
-                      />
-                    </div>
+                      <View className="w-8 h-8 rounded-full bg-[#d3bc8e] items-center justify-center">
+                        <Play size={16} color="#1c1d28" fill="#1c1d28" />
+                      </View>
+                      <Text
+                        className={
+                          msg.isMe
+                            ? "text-[#1c1d28] font-medium"
+                            : "text-white font-medium"
+                        }
+                      >
+                        Play Audio
+                      </Text>
+                    </TouchableOpacity>
                   )}
                 </View>
                 <Text
@@ -997,12 +1070,12 @@ export default function ChatHub({
             )}
           </ScrollView>
 
-          {/* Attachment Menu */}
+          {/* Attachment & Input */}
           {isAttachmentOpen && (
-            <View className="absolute bottom-20 left-4 bg-[#2e3142] border border-[#3b3e52] rounded-2xl p-2 shadow-2xl animate-in fade-in slide-in-from-bottom-5">
+            <View className="absolute bottom-20 left-4 bg-[#2e3142] border border-[#3b3e52] rounded-2xl p-2 shadow-2xl">
               <TouchableOpacity
                 onPress={triggerFilePicker}
-                className="flex-row items-center p-3 hover:bg-[#3b3e52] rounded-xl mb-1"
+                className="flex-row items-center p-3 rounded-xl mb-1"
               >
                 <ImageIcon size={20} color="#d3bc8e" />
                 <Text className="text-white font-medium ml-3">
@@ -1011,7 +1084,7 @@ export default function ChatHub({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleShareLocation}
-                className="flex-row items-center p-3 hover:bg-[#3b3e52] rounded-xl"
+                className="flex-row items-center p-3 rounded-xl"
               >
                 <MapPin size={20} color="#4ade80" />
                 <Text className="text-white font-medium ml-3">
@@ -1020,20 +1093,20 @@ export default function ChatHub({
               </TouchableOpacity>
             </View>
           )}
-
-          {/* Input Area */}
           <View className="p-4 bg-[#1c1d28] border-t border-[#3b3e52]">
-            {isRecording ? (
+            {recording ? (
               <View className="flex-row items-center justify-between bg-[#2e3142] border border-red-500/50 rounded-full px-4 h-12">
                 <View className="flex-row items-center">
                   <View className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-3" />
-                  <Text className="text-white font-mono">
-                    {formatTime(recordingDuration)}
-                  </Text>
+                  <Text className="text-white font-mono">{`${Math.floor(
+                    recordingDuration / 60
+                  )}:${recordingDuration % 60 < 10 ? "0" : ""}${
+                    recordingDuration % 60
+                  }`}</Text>
                 </View>
                 <TouchableOpacity
                   onPress={toggleRecording}
-                  className="w-8 h-8 bg-red-500 rounded-full items-center justify-center shadow-lg"
+                  className="w-8 h-8 bg-red-500 rounded-full items-center justify-center"
                 >
                   <Square size={14} color="white" fill="white" />
                 </TouchableOpacity>
@@ -1042,10 +1115,10 @@ export default function ChatHub({
               <View className="flex-row items-center gap-2">
                 <TouchableOpacity
                   onPress={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className={`p-3 rounded-full border transition-colors ${
+                  className={`p-3 rounded-full border ${
                     isAttachmentOpen
                       ? "bg-[#d3bc8e] border-[#d3bc8e]"
-                      : "bg-[#2e3142] border-[#3b3e52] hover:bg-[#3b3e52]"
+                      : "bg-[#2e3142] border-[#3b3e52]"
                   }`}
                 >
                   <Paperclip
@@ -1059,7 +1132,7 @@ export default function ChatHub({
                     placeholderTextColor="#6b7280"
                     value={inputText}
                     onChangeText={setInputText}
-                    className="text-white text-base outline-none"
+                    className="text-white text-base"
                     multiline
                     maxLength={500}
                   />
@@ -1067,14 +1140,14 @@ export default function ChatHub({
                 {inputText.trim() ? (
                   <TouchableOpacity
                     onPress={handleSendMessage}
-                    className="w-12 h-12 bg-[#d3bc8e] rounded-full items-center justify-center shadow-lg hover:bg-[#e6ce9a] transition-colors"
+                    className="w-12 h-12 bg-[#d3bc8e] rounded-full items-center justify-center"
                   >
                     <Send size={20} color="#1c1d28" style={{ marginLeft: 2 }} />
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
                     onPress={toggleRecording}
-                    className="w-12 h-12 bg-[#2e3142] border border-[#3b3e52] rounded-full items-center justify-center hover:bg-[#3b3e52] transition-colors"
+                    className="w-12 h-12 bg-[#2e3142] border border-[#3b3e52] rounded-full items-center justify-center"
                   >
                     <Mic size={20} color="#d3bc8e" />
                   </TouchableOpacity>
