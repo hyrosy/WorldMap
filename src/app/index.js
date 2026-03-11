@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  Dimensions,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useAuth } from "../context/AuthContext";
@@ -15,244 +17,326 @@ import {
   ShoppingBag,
   User,
   Search,
-  PlayCircle,
   ArrowRight,
+  MessageCircle,
+  Compass,
+  Trophy,
+  CloudRain,
+  Users,
+  ShieldCheck,
+  Coins,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import ChatHub from "../components/ChatHub"; // 🌟 Import ChatHub
 
-const CITY_DATA = [
+const { width } = Dimensions.get("window");
+
+const REGIONS = [
   {
     id: "marrakech",
     name: "Marrakech",
     image:
-      "https://images.unsplash.com/photo-1597211661944-8e433c1d5e46?auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1597211661944-8e433c1d5e46?q=80&w=800&auto=format&fit=crop", // Fixed URL parameters
     description: "The Red City",
+    exploration: 14,
+    stats: { weather: "28°C", crowds: "High", safety: "Secure" },
   },
   {
     id: "casablanca",
     name: "Casablanca",
     image:
-      "https://images.unsplash.com/photo-1539020140153-e479b8c22e70?auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1539020140153-e479b8c22e70?q=80&w=800&auto=format&fit=crop",
     description: "Modern Heritage",
+    exploration: 0,
+    stats: { weather: "22°C", crowds: "Moderate", safety: "Secure" },
   },
   {
     id: "rabat",
     name: "Rabat",
     image:
-      "https://images.unsplash.com/photo-1534449835073-61aa157b120a?auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1534449835073-61aa157b120a?q=80&w=800&auto=format&fit=crop",
     description: "Capital of Culture",
+    exploration: 5,
+    stats: { weather: "21°C", crowds: "Low", safety: "High" },
   },
 ];
 
-// UPDATED: Replaced WP IDs with Supabase Category Strings
-const CATEGORIES = [
-  { id: "Activities", name: "Adventures" },
-  { id: "Food & Cooking", name: "Culinary" },
-  { id: "Monuments", name: "Monuments" },
-  { id: "Shops", name: "Shopping" },
-  { id: "Experiences", name: "Experiences" },
+const FEATURES = [
+  {
+    title: "Fog of War",
+    desc: "Every step you take in Morocco clears the dark mist on your personal 3D map.",
+    icon: Search,
+  },
+  {
+    title: "Merchant Guild",
+    desc: "Buy authentic local artifacts directly from verified artisans.",
+    icon: ShoppingBag,
+  },
+  {
+    title: "Party Radar",
+    desc: "See your friends moving in real-time on the GTA-style mini-map.",
+    icon: Users,
+  },
 ];
 
 export default function UniversalHome() {
   const { user } = useAuth();
   const { cart } = useCart();
   const router = useRouter();
+  const [isChatOpen, setIsChatOpen] = useState(false); // 🌟 Chat State
 
-  const isWeb = Platform.OS === "web";
-  // If on web, constrain width to act like a mobile simulator. If on mobile, take full width.
-  const containerStyle = isWeb
-    ? "w-full max-w-md mx-auto shadow-2xl h-full min-h-screen border-x border-gray-800"
-    : "flex-1";
+  const displayName = user?.user_metadata?.username || "Traveler";
 
   return (
-    // UPDATED THEME: Changed from light gray to deep black/gray-900
-    <View className="flex-1 bg-black items-center justify-center">
-      <SafeAreaView className={`bg-gray-900 ${containerStyle}`}>
-        <Stack.Screen options={{ headerShown: false }} />
+    <View className="flex-1 bg-[#050608]">
+      <Stack.Screen options={{ headerShown: false }} />
 
-        {/* Header */}
-        <View className="flex-row justify-between items-center px-6 py-4 bg-gray-900 border-b border-gray-800 pt-12">
+      {/* 🌟 FULL WIDTH CONTAINER 🌟 */}
+      <SafeAreaView className="flex-1 w-full bg-[#1c1d28]">
+        {/* HEADER */}
+        <View className="flex-row justify-between items-center px-6 py-4 bg-[#2e3142] border-b border-[#3b3e52] pt-12 shadow-md z-20">
           <View className="flex-row items-center gap-3">
-            <View className="w-10 h-10 bg-[#d3bc8e] rounded-full items-center justify-center shadow-lg">
-              <Text className="text-black font-black text-xl">H</Text>
+            <View className="w-10 h-10 bg-[#1c1d28] border-2 border-[#d3bc8e] rounded-full items-center justify-center">
+              <Text className="text-[#d3bc8e] font-black text-xl">H</Text>
             </View>
-            <Text className="text-2xl font-black text-white tracking-tight">
-              hyrosy
-            </Text>
+            <View className="hidden sm:flex">
+              <Text className="text-xl font-black text-white">hyrosy</Text>
+              <Text className="text-[#d3bc8e] text-[10px] font-bold tracking-widest">
+                RANK 12 TRAVELER
+              </Text>
+            </View>
           </View>
 
-          <View className="flex-row items-center gap-5">
+          <View className="flex-row items-center gap-4">
+            <TouchableOpacity
+              onPress={() => setIsChatOpen(true)}
+              className="p-2 relative"
+            >
+              <MessageCircle size={24} color="#d3bc8e" />
+              <View className="absolute top-1 right-1 bg-red-500 w-3 h-3 rounded-full border-2 border-[#2e3142]" />
+            </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => router.push("/store")}
-              className="active:scale-95 transition-transform"
+              className="p-2 relative"
             >
-              <View>
-                <ShoppingBag size={24} color="#d1d5db" />
-                {cart.length > 0 && (
-                  <View className="absolute -top-2 -right-2 bg-cyan-500 w-5 h-5 rounded-full items-center justify-center border-2 border-gray-900">
-                    <Text className="text-[10px] text-gray-900 font-bold">
-                      {cart.length}
-                    </Text>
-                  </View>
-                )}
-              </View>
+              <ShoppingBag size={24} color="#9ca3af" />
+              {cart.length > 0 && (
+                <View className="absolute top-1 right-1 bg-[#d3bc8e] w-4 h-4 rounded-full items-center justify-center">
+                  <Text className="text-[9px] text-[#1c1d28] font-bold">
+                    {cart.length}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => router.push(user ? "/account" : "/auth")}
-              className="active:scale-95 transition-transform"
             >
-              {user?.user_metadata?.avatar_url ? (
-                <Image
-                  source={{ uri: user.user_metadata.avatar_url }}
-                  className="w-9 h-9 rounded-full border-2 border-gray-700"
-                />
-              ) : (
-                <View className="w-9 h-9 bg-gray-800 rounded-full items-center justify-center border border-gray-700">
-                  <User size={20} color="#9ca3af" />
-                </View>
-              )}
+              <View className="w-10 h-10 bg-[#1c1d28] rounded-full items-center justify-center border border-[#d3bc8e]">
+                <User size={20} color="#d3bc8e" />
+              </View>
             </TouchableOpacity>
           </View>
         </View>
 
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          {/* Hero Section */}
-          <View className="px-6 pt-10 pb-6">
-            <Text className="text-5xl font-black text-white leading-tight tracking-tight">
-              Discover <Text className="text-[#d3bc8e]">Morocco</Text>
-            </Text>
-            <Text className="text-gray-400 mt-3 text-lg leading-6 font-medium">
-              Explore authentic craftsmanship and hidden gems.
-            </Text>
+          {/* HERO SECTION - Responsive Grid */}
+          <View className="flex-row flex-wrap lg:flex-nowrap px-6 pt-10 pb-10 gap-10">
+            <View className="flex-1 min-w-[300px] justify-center">
+              <Text className="text-[#d3bc8e] font-bold text-lg mb-2 uppercase tracking-[4px]">
+                Initiate Discovery
+              </Text>
+              <Text className="text-6xl font-black text-white leading-tight tracking-tighter">
+                Explore the <Text className="text-[#d3bc8e]">Unseen.</Text>
+              </Text>
+              <Text className="text-gray-400 mt-4 text-xl leading-8 max-w-lg">
+                The first real-world RPG. Track your physical movements through
+                Morocco, clear the fog, and connect with fellow adventurers.
+              </Text>
 
-            <View className="flex-row gap-3 mt-8">
-              <TouchableOpacity
-                className="flex-1 bg-cyan-500 py-4 rounded-2xl flex-row justify-center items-center gap-2 shadow-lg active:bg-cyan-600 transition-colors"
-                onPress={() => router.push("/map")}
-              >
-                <MapPin color="#111827" size={20} />
-                <Text className="text-gray-900 font-bold text-base">
-                  Open Map
-                </Text>
-              </TouchableOpacity>
+              <View className="flex-row gap-4 mt-10">
+                <TouchableOpacity
+                  className="bg-[#d3bc8e] px-8 py-4 rounded-2xl flex-row items-center gap-3 shadow-xl"
+                  onPress={() => router.push("/map")}
+                >
+                  <Compass color="#1c1d28" size={24} />
+                  <Text className="text-[#1c1d28] font-black text-lg">
+                    LAUNCH MAP
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="bg-[#2e3142] border border-[#3b3e52] px-8 py-4 rounded-2xl flex-row items-center gap-3"
+                  onPress={() => router.push("/store")}
+                >
+                  <Coins color="#d3bc8e" size={24} />
+                  <Text className="text-white font-bold text-lg">
+                    TRADING POST
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-              <TouchableOpacity
-                className="flex-1 bg-gray-800 border border-gray-700 py-4 rounded-2xl flex-row justify-center items-center gap-2 shadow-sm active:bg-gray-700 transition-colors"
-                onPress={() => router.push("/store")}
-              >
-                <Search color="#d1d5db" size={20} />
-                <Text className="text-white font-bold text-base">
-                  Browse Shop
-                </Text>
-              </TouchableOpacity>
+            {/* Feature Cards Column */}
+            <View className="w-full lg:w-96 gap-4">
+              {FEATURES.map((feat, i) => (
+                <View
+                  key={i}
+                  className="bg-[#2e3142] p-6 rounded-3xl border border-[#3b3e52]"
+                >
+                  <View className="flex-row items-center gap-4 mb-2">
+                    <feat.icon size={20} color="#d3bc8e" />
+                    <Text className="text-white font-black text-lg">
+                      {feat.title}
+                    </Text>
+                  </View>
+                  <Text className="text-gray-400 text-sm leading-5">
+                    {feat.desc}
+                  </Text>
+                </View>
+              ))}
             </View>
           </View>
 
-          {/* Cities Carousel */}
-          <View className="py-6">
-            <View className="flex-row justify-between items-center px-6 mb-5">
-              <Text className="text-xl font-bold text-white tracking-wide">
-                Destinations
-              </Text>
+          {/* 🌟 REGIONS SECTION 🌟 */}
+          <View className="px-6 py-10 bg-[#050608]/30">
+            <View className="flex-row justify-between items-end mb-8">
+              <View>
+                <Text className="text-[#d3bc8e] font-bold tracking-widest uppercase text-xs mb-1">
+                  Active Waypoints
+                </Text>
+                <Text className="text-3xl font-black text-white">
+                  Known Regions
+                </Text>
+              </View>
               <TouchableOpacity>
-                <Text className="text-[#d3bc8e] font-bold">View All</Text>
+                <Text className="text-[#d3bc8e] font-bold">Show All</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 24, gap: 16 }}
-            >
-              {CITY_DATA.map((city) => (
+            <View className="flex-row flex-wrap gap-6">
+              {REGIONS.map((region) => (
                 <TouchableOpacity
-                  key={city.id}
-                  className="w-64 h-80 rounded-3xl overflow-hidden relative shadow-xl bg-gray-800 active:scale-95 transition-transform border border-gray-700"
-                  // Pass the city to the map route perfectly
+                  key={region.id}
+                  className="flex-1 min-w-[320px] h-96 rounded-[40px] overflow-hidden border border-[#3b3e52]"
                   onPress={() =>
-                    router.push({ pathname: "/map", params: { city: city.id } })
+                    router.push({
+                      pathname: "/map",
+                      params: { city: region.id },
+                    })
                   }
                 >
                   <Image
-                    source={{ uri: city.image }}
+                    source={{ uri: region.image }}
                     className="absolute inset-0 w-full h-full"
                     resizeMode="cover"
                   />
                   <LinearGradient
-                    colors={["transparent", "rgba(0,0,0,0.9)"]}
-                    className="absolute inset-0 justify-end p-6"
+                    colors={["transparent", "rgba(28,29,40,1)"]}
+                    className="absolute inset-0 justify-end p-8"
                   >
-                    <Text className="text-white text-3xl font-black tracking-tight">
-                      {city.name}
+                    <Text className="text-white text-4xl font-black mb-2">
+                      {region.name}
                     </Text>
-                    <Text className="text-gray-300 text-sm mt-1 font-medium">
-                      {city.description}
-                    </Text>
-                    <View className="flex-row items-center mt-4 bg-white/20 self-start px-4 py-2 rounded-full backdrop-blur-md">
-                      <PlayCircle size={16} color="white" />
-                      <Text className="text-white text-xs font-bold ml-2">
-                        Watch Story
-                      </Text>
+
+                    {/* RPG STATS FOR TRAVEL */}
+                    <View className="flex-row gap-4 mb-6">
+                      <View className="flex-row items-center gap-1.5 bg-black/40 px-3 py-1.5 rounded-full border border-white/10">
+                        <CloudRain size={14} color="#d3bc8e" />
+                        <Text className="text-white text-[10px] font-bold">
+                          {region.stats.weather}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center gap-1.5 bg-black/40 px-3 py-1.5 rounded-full border border-white/10">
+                        <Users size={14} color="#d3bc8e" />
+                        <Text className="text-white text-[10px] font-bold">
+                          {region.stats.crowds}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center gap-1.5 bg-black/40 px-3 py-1.5 rounded-full border border-white/10">
+                        <ShieldCheck size={14} color="#4ade80" />
+                        <Text className="text-white text-[10px] font-bold">
+                          {region.stats.safety}
+                        </Text>
+                      </View>
                     </View>
+
+                    <View className="w-full h-2 bg-black/50 rounded-full overflow-hidden">
+                      <View
+                        className="h-full bg-[#d3bc8e]"
+                        style={{ width: `${region.exploration}%` }}
+                      />
+                    </View>
+                    <Text className="text-[#d3bc8e] text-[10px] font-bold uppercase mt-2">
+                      Exploration: {region.exploration}%
+                    </Text>
                   </LinearGradient>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
-          </View>
-
-          {/* Categories Grid */}
-          <View className="px-6 py-6">
-            <Text className="text-xl font-bold text-white mb-5 tracking-wide">
-              Categories
-            </Text>
-            <View className="flex-row flex-wrap gap-3">
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  className="bg-gray-800 border border-gray-700 px-5 py-3.5 rounded-xl shadow-sm flex-row items-center active:bg-gray-700 transition-colors"
-                >
-                  <View className="w-2.5 h-2.5 rounded-full bg-[#d3bc8e] mr-3" />
-                  <Text className="text-gray-200 font-bold">{cat.name}</Text>
-                </TouchableOpacity>
-              ))}
             </View>
           </View>
 
-          {/* Featured Quest Widget */}
-          <View className="px-6 pb-24 mt-4">
-            <View className="bg-gradient-to-br from-gray-800 to-gray-900 p-6 rounded-3xl border border-gray-700 shadow-lg">
-              <View className="flex-row justify-between items-start">
-                <View>
-                  <Text className="text-[#d3bc8e] font-bold text-xs tracking-widest uppercase mb-2">
-                    Featured Quest
-                  </Text>
-                  <Text className="text-2xl font-black text-white w-48 leading-tight">
-                    Secrets of the Medina
-                  </Text>
+          {/* 🌟 TRAVEL INTEL (FOOTER INFO) 🌟 */}
+          <View className="px-6 py-20 border-t border-[#3b3e52]">
+            <View className="bg-[#2e3142] p-10 rounded-[50px] border border-[#d3bc8e]/20 flex-row flex-wrap lg:flex-nowrap gap-10">
+              <View className="flex-1">
+                <Text className="text-white text-3xl font-black mb-4">
+                  Traveler Intel
+                </Text>
+                <Text className="text-gray-400 text-lg leading-7">
+                  Morocco uses the MAD (Dirham). Travelers from most regions do
+                  not require a visa for up to 90 days. Always carry cash for
+                  the Medinas!
+                </Text>
+              </View>
+              <View className="w-full lg:w-80 gap-6">
+                <View className="flex-row items-center gap-4">
+                  <View className="w-12 h-12 bg-[#1c1d28] rounded-2xl items-center justify-center border border-[#3b3e52]">
+                    <Coins color="#d3bc8e" />
+                  </View>
+                  <View>
+                    <Text className="text-white font-bold">Currency</Text>
+                    <Text className="text-gray-500 text-sm">
+                      1 USD ≈ 10.2 MAD
+                    </Text>
+                  </View>
                 </View>
-                <View className="bg-cyan-500/20 border border-cyan-500/50 px-3 py-1.5 rounded-full">
-                  <Text className="text-cyan-400 font-bold text-xs">
-                    5 Steps
-                  </Text>
+                <View className="flex-row items-center gap-4">
+                  <View className="w-12 h-12 bg-[#1c1d28] rounded-2xl items-center justify-center border border-[#3b3e52]">
+                    <Compass color="#d3bc8e" />
+                  </View>
+                  <View>
+                    <Text className="text-white font-bold">
+                      Best Time to Visit
+                    </Text>
+                    <Text className="text-gray-500 text-sm">
+                      March - May (Spring)
+                    </Text>
+                  </View>
                 </View>
               </View>
-              <Text className="text-gray-400 mt-3 mb-6 leading-6 font-medium">
-                Continue your journey through the ancient streets and discover
-                hidden artisans.
-              </Text>
-              <TouchableOpacity
-                className="bg-white self-start px-6 py-3.5 rounded-xl flex-row items-center active:bg-gray-200 transition-colors shadow-md"
-                onPress={() => router.push("/map")}
-              >
-                <Text className="text-black font-black mr-2">
-                  Start Exploring
-                </Text>
-                <ArrowRight size={18} color="black" />
-              </TouchableOpacity>
             </View>
           </View>
+
+          <View className="h-20" />
         </ScrollView>
+
+        {/* 🌟 FLOATING CHAT TRIGGER (FOR MOBILE) 🌟 */}
+        <TouchableOpacity
+          className="absolute bottom-8 right-8 w-16 h-16 bg-[#d3bc8e] rounded-full items-center justify-center shadow-2xl z-50 lg:hidden"
+          onPress={() => setIsChatOpen(true)}
+        >
+          <MessageCircle color="#1c1d28" size={30} />
+        </TouchableOpacity>
+
+        {/* 🌟 INTEGRATED CHAT HUB COMPONENT 🌟 */}
+        <ChatHub
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          userLocation={null} // Can be wired to a global location provider later
+          mapRef={null}
+          currentWorld={null} // 🌟 Add this line
+        />
       </SafeAreaView>
     </View>
   );

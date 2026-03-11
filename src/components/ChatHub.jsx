@@ -406,6 +406,19 @@ export default function ChatHub({
     } catch (err) {}
   };
 
+  const handleSendMessage = () => {
+    if (!inputText.trim()) return;
+
+    // Calls the database logic we built earlier
+    sendMessageToDB({
+      type: "text",
+      text: inputText,
+    });
+
+    // Clears the input box so you can type the next message
+    setInputText("");
+  };
+
   // 🌟 LOCATION HANDLERS 🌟
   const handleShareLocation = () => {
     setIsAttachmentOpen(false);
@@ -795,7 +808,7 @@ export default function ChatHub({
           </View>
 
           <ScrollView className="flex-1 px-3 py-4">
-            {currentWorld?.id !== "base" && (
+            {currentWorld && currentWorld.id !== "base" && (
               <View className="mb-6">
                 <Text className="text-[#d3bc8e] font-bold text-xs uppercase tracking-widest mb-3 ml-2">
                   Active World
@@ -804,7 +817,7 @@ export default function ChatHub({
                   onPress={() => {
                     setActiveChat({
                       id: `world_${currentWorld.id}`,
-                      name: `${currentWorld.name} Lobby`,
+                      name: `${currentWorld.name} Lobby`, // ❌ This was crashing if currentWorld was missing
                       type: "world",
                     });
                     setActiveView("chat");
@@ -904,10 +917,10 @@ export default function ChatHub({
               </TouchableOpacity>
               <View>
                 <Text className="text-xl font-black text-white tracking-tight">
-                  {activeChat.name}
+                  {activeChat?.name || "Chat"}
                 </Text>
                 <Text className="text-[#d3bc8e] text-xs font-bold uppercase tracking-widest mt-0.5">
-                  {activeChat.type === "world"
+                  {activeChat?.type === "world"
                     ? "Party Chat"
                     : "Direct Message"}
                 </Text>
