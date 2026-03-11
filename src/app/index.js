@@ -297,7 +297,7 @@ export default function UniversalHome() {
                   <View>
                     <Text className="text-white font-bold">Currency</Text>
                     <Text className="text-gray-500 text-sm">
-                      1 USD ≈ 10.1 MAD
+                      1 USD ≈ 10.2 MAD
                     </Text>
                   </View>
                 </View>
