@@ -298,16 +298,56 @@ export default function WebMapLogic() {
   const [searchResults, setSearchResults] = useState([]);
 
   // 🌟 RADAR: WALKED PATH LOGIC 🌟
+  // 🌟 RADAR: PERSISTENT WALKED PATH LOGIC 🌟
   const [walkedPath, setWalkedPath] = useState([]);
+  const [unsavedPoints, setUnsavedPoints] = useState(0);
+
+  // 1. Fetch saved path when the app loads
+  // 1. Fetch saved path when the app loads
+  useEffect(() => {
+    const loadExploration = async () => {
+      if (!session?.user) return;
+      const { data, error } = await supabase
+        .from("user_exploration")
+        .select("walked_path")
+        .eq("user_id", session.user.id)
+        .maybeSingle(); // ✅ THE FIX
+
+      if (data?.walked_path) {
+        setWalkedPath(data.walked_path);
+      }
+    };
+    loadExploration();
+  }, [session]);
+
+  // 2. Track new GPS points as you walk
   useEffect(() => {
     if (!userLocation) return;
     setWalkedPath((prev) => {
       const last = prev[prev.length - 1];
+      // Only add coordinate if we actually moved to save memory
       if (last && last[0] === userLocation[0] && last[1] === userLocation[1])
         return prev;
+
+      setUnsavedPoints((p) => p + 1);
       return [...prev, userLocation];
     });
   }, [userLocation]);
+
+  // 3. Batch save to Supabase every 10 new GPS points
+  useEffect(() => {
+    if (unsavedPoints >= 10 && session?.user) {
+      const savePath = async () => {
+        await supabase.from("user_exploration").upsert({
+          user_id: session.user.id,
+          walked_path: walkedPath,
+          updated_at: new Date().toISOString(),
+        });
+        setUnsavedPoints(0); // Reset counter after saving
+      };
+      savePath();
+    }
+  }, [unsavedPoints, walkedPath, session]);
 
   useEffect(() => {
     if (!session?.user) return;

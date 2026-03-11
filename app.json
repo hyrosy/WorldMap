@@ -39,15 +39,26 @@
     "web": {
       "favicon": "./public/hyrosy.png",
       "bundler": "metro"
-    },    "plugins": [
+    },
+    "plugins": [
       "expo-router",
       "@rnmapbox/maps",
+
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera for video calls.",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for voice calls."
+        }
+      ],
+      
       [
         "expo-image-picker",
         {
           "photosPermission": "Hyrosy needs access to your photos so you can share tips and images of your experiences."
         }
       ],
+
       [
         "@stripe/stripe-react-native",
         {
@@ -55,7 +66,8 @@
           "enableApplePay": true
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "@config-plugins/react-native-webrtc"
     ]
   }
 }

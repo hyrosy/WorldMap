@@ -71,7 +71,7 @@ export default function RadarMap({
     return () => map.current?.remove();
   }, []);
 
-  // 🌟 FOG OF WAR CUTTER 🌟
+  // 🌟 FOG OF WAR CUTTER (OPTIMIZED FOR PERSISTENT DATA) 🌟
   useEffect(() => {
     if (!map.current || !map.current.isStyleLoaded() || walkedPath.length === 0)
       return;
@@ -79,18 +79,29 @@ export default function RadarMap({
     const worldBox = turf.bboxPolygon([-180, -85, 180, 85]);
     let exploredArea;
 
-    // Create a 50-meter vision radius around everywhere you've walked
     if (walkedPath.length === 1) {
+      // Just a single point (brand new user)
       exploredArea = turf.buffer(turf.point(walkedPath[0]), 50, {
         units: "meters",
       });
     } else {
-      exploredArea = turf.buffer(turf.lineString(walkedPath), 50, {
-        units: "meters",
+      // Create the raw path
+      let rawLine = turf.lineString(walkedPath);
+
+      // 🚀 PERFORMANCE FIX: Simplify the path
+      // This removes redundant points in straight lines so Turf.js doesn't crash
+      // when calculating the buffer for weeks of walking data.
+      let optimizedLine = turf.simplify(rawLine, {
+        tolerance: 0.0001,
+        highQuality: false,
       });
+
+      // Create the 50-meter vision bubble around the optimized path
+      exploredArea = turf.buffer(optimizedLine, 50, { units: "meters" });
+
       map.current.getSource("walked-path")?.setData({
         type: "Feature",
-        geometry: turf.lineString(walkedPath).geometry,
+        geometry: optimizedLine.geometry,
       });
     }
 
@@ -122,7 +133,15 @@ export default function RadarMap({
       markersRef.current["me"].setLngLat(userLocation);
     }
 
-    // Draw Friends Blips (Or chat friends)
+    // Draw Friends Blips
+    const activeIds = partyLocations.map((p) => p.userId);
+    Object.keys(markersRef.current).forEach((id) => {
+      if (id !== "me" && !activeIds.includes(id)) {
+        markersRef.current[id].remove();
+        delete markersRef.current[id];
+      }
+    });
+
     partyLocations.forEach((friend) => {
       if (!markersRef.current[friend.userId]) {
         const el = document.createElement("div");
