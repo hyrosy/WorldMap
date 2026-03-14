@@ -32,6 +32,9 @@ import {
   Map as MapIcon,
   UserPlus,
   List,
+  Route,
+  Radar,
+  Users,
 } from "lucide-react-native";
 
 // --- SUB-COMPONENTS ---
@@ -115,6 +118,7 @@ export default function QuestPanel({
   onQuestSelect,
   dynamicPins, // 🌟 NEW PROP
   currentWorld, // 🌟 NEW PROP
+  onRequestAuth,
 }) {
   const safeQuests = quests || [];
   const questsByCity = safeQuests.reduce((acc, quest) => {
@@ -406,13 +410,11 @@ export default function QuestPanel({
       .select()
       .single();
     if (!worldError && worldData) {
-      await supabase
-        .from("world_members")
-        .insert({
-          world_id: worldData.id,
-          user_id: session.user.id,
-          role: "owner",
-        });
+      await supabase.from("world_members").insert({
+        world_id: worldData.id,
+        user_id: session.user.id,
+        role: "owner",
+      });
       setNewWorldName("");
       setNewWorldDesc("");
       setWorldView("list");
@@ -486,14 +488,64 @@ export default function QuestPanel({
   // --- RENDER VIEWS ---
 
   // 1. RENDER CUSTOM ROUTES & LISTS
+  // 1. RENDER CUSTOM ROUTES & LISTS
   const renderCustomTab = () => {
     if (!session?.user) {
       return (
-        <View className="flex-1 items-center justify-center p-10 mt-10 border border-dashed border-[#3b3e52] rounded-3xl bg-[#2e3142]/50 mx-5">
-          <MapIcon size={40} color="#6b7280" className="mb-4" />
-          <Text className="text-gray-400 font-medium text-center leading-6">
-            Please sign in to create and save custom map routes.
-          </Text>
+        <View className="p-6 mt-4">
+          <View className="bg-[#2e3142] rounded-3xl border border-[#3b3e52] p-6 shadow-2xl relative overflow-hidden">
+            {/* Ambient Glow */}
+            <View className="absolute -top-10 -right-10 w-32 h-32 bg-[#d3bc8e] rounded-full blur-[60px] opacity-20" />
+
+            <View className="w-16 h-16 bg-[#1c1d28] rounded-2xl items-center justify-center border border-[#d3bc8e] mb-6 shadow-lg">
+              <MapIcon size={28} color="#d3bc8e" />
+            </View>
+
+            <Text className="text-2xl font-black text-white mb-2 tracking-tight">
+              Your Personal Atlas
+            </Text>
+            <Text className="text-gray-400 font-medium leading-6 mb-8">
+              Build custom itineraries, save hidden gems into private lists, and
+              share routes directly to your friends' map.
+            </Text>
+
+            {/* Visual Feature List */}
+            <View className="space-y-4 mb-8">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-full bg-[#1c1d28] items-center justify-center border border-[#3b3e52] mr-4 shadow-sm">
+                  <MapPin size={18} color="#d3bc8e" />
+                </View>
+                <Text className="text-white font-bold text-base">
+                  Save unlimited locations
+                </Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-full bg-[#1c1d28] items-center justify-center border border-[#3b3e52] mr-4 shadow-sm">
+                  <Route size={18} color="#d3bc8e" />
+                </View>
+                <Text className="text-white font-bold text-base">
+                  Connect pins into routes
+                </Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-full bg-[#1c1d28] items-center justify-center border border-[#3b3e52] mr-4 shadow-sm">
+                  <Share2 size={18} color="#d3bc8e" />
+                </View>
+                <Text className="text-white font-bold text-base">
+                  Share directly via Inbox
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={onRequestAuth}
+              className="w-full bg-[#e6ce9a] h-14 rounded-xl items-center justify-center shadow-[0_0_20px_rgba(230,206,154,0.3)] active:scale-95 transition-transform"
+            >
+              <Text className="text-[#1c1d28] font-black text-lg">
+                Join to Create Routes
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
@@ -988,14 +1040,56 @@ export default function QuestPanel({
   };
 
   // 2. RENDER WORLDS (Multiplayer Realms)
+  // 2. RENDER WORLDS (Multiplayer Realms)
   const renderMyWorlds = () => {
     if (!session?.user) {
       return (
-        <View className="flex-1 items-center justify-center p-10 mt-10 border border-dashed border-[#3b3e52] rounded-3xl bg-[#2e3142]/50 mx-5">
-          <Globe size={40} color="#6b7280" className="mb-4" />
-          <Text className="text-gray-400 font-medium text-center leading-6">
-            Please sign in to access Multiplayer Worlds.
-          </Text>
+        <View className="p-6 mt-4">
+          <View className="bg-[#2e3142] rounded-3xl border border-[#3b3e52] p-6 shadow-2xl relative overflow-hidden">
+            {/* Ambient Glow */}
+            <View className="absolute -top-10 -right-10 w-40 h-40 bg-blue-500 rounded-full blur-[60px] opacity-10" />
+
+            <View className="w-16 h-16 bg-[#1c1d28] rounded-2xl items-center justify-center border border-[#d3bc8e] mb-6 shadow-lg">
+              <Globe size={28} color="#d3bc8e" />
+            </View>
+
+            <Text className="text-2xl font-black text-white mb-2 tracking-tight">
+              Multiplayer Realms
+            </Text>
+            <Text className="text-gray-400 font-medium leading-6 mb-8">
+              Turn the map into a co-op lobby. Invite your party, see their live
+              movements on the radar, and conquer the world together.
+            </Text>
+
+            {/* Visual Feature List */}
+            <View className="space-y-4 mb-8">
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-full bg-[#1c1d28] items-center justify-center border border-[#3b3e52] mr-4 shadow-sm">
+                  <Users size={18} color="#d3bc8e" />
+                </View>
+                <Text className="text-white font-bold text-base">
+                  Form a private travel party
+                </Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="w-10 h-10 rounded-full bg-[#1c1d28] items-center justify-center border border-[#3b3e52] mr-4 shadow-sm">
+                  <Radar size={18} color="#d3bc8e" />
+                </View>
+                <Text className="text-white font-bold text-base">
+                  Live GTA-style mini-map
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={onRequestAuth}
+              className="w-full bg-[#e6ce9a] h-14 rounded-xl items-center justify-center shadow-[0_0_20px_rgba(230,206,154,0.3)] active:scale-95 transition-transform"
+            >
+              <Text className="text-[#1c1d28] font-black text-lg">
+                Join to Forge Worlds
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }

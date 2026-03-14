@@ -25,6 +25,7 @@ import {
   Globe,
   PhoneCall,
   PhoneOff,
+  Lock, // 🌟 ADD THIS
 } from "lucide-react-native";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -648,6 +649,32 @@ export default function ChatHub({
   };
 
   if (!isOpen) return null;
+
+  if (!session?.user) {
+    return (
+      <View className="absolute top-0 right-0 w-full sm:w-[400px] h-full bg-[#1c1d28]/95 backdrop-blur-xl z-50 flex-col shadow-2xl border-l border-[#3b3e52] animate-in slide-in-from-right duration-300 items-center justify-center p-8 pointer-events-auto">
+        <View className="w-24 h-24 bg-[#2e3142] rounded-full border-2 border-[#d3bc8e] items-center justify-center mb-6 shadow-[0_0_30px_rgba(211,188,142,0.2)]">
+          <Lock size={40} color="#d3bc8e" />
+        </View>
+        <Text className="text-3xl font-black text-white text-center mb-2 tracking-tight">
+          Comms Offline
+        </Text>
+        <Text className="text-gray-400 text-center font-medium mb-10 leading-6 text-base">
+          You must be logged into the Guild to access party comms, direct
+          messages, and local radar.
+        </Text>
+
+        <TouchableOpacity
+          onPress={onClose}
+          className="w-full bg-[#e6ce9a] py-4 rounded-xl items-center shadow-[0_0_15px_rgba(230,206,154,0.4)] active:scale-95 transition-transform"
+        >
+          <Text className="text-[#1c1d28] font-black text-lg uppercase tracking-wider">
+            Close Panel
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View className="absolute top-0 right-0 w-full sm:w-[400px] h-full bg-[#1c1d28] z-50 flex-col shadow-2xl border-l border-[#3b3e52] animate-in slide-in-from-right duration-300 overflow-hidden">
