@@ -850,7 +850,6 @@ export default function WebMapLogic() {
                     {is3D ? "2D" : "3D"}
                   </Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   onPress={() => requireAuth(() => setIsChatOpen(true))}
                   className="bg-[#2e3142]/90 border border-[#3b3e52] rounded-full h-12 w-12 items-center justify-center shadow-lg active:scale-95"
