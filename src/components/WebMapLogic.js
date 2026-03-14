@@ -12,6 +12,8 @@ import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import ChatHub from "@/components/ChatHub";
 import RadarMap from "@/components/RadarMap"; // 🌟 IMPORTS RADAR MAP
+import AuthModal from "@/components/AuthModal";
+import ProfilePanel from "@/components/ProfilePanel";
 import {
   MapPin,
   Search,
@@ -25,8 +27,20 @@ import {
   Globe,
   ChevronDown,
   Radar,
+  User, // 🌟 ADDED FOR AVATAR
   Users, // 🌟 ADDED USERS ICON
 } from "lucide-react";
+// 🌟 ADD THESE IMPORTS 🌟
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  SafeAreaView,
+  Platform,
+  ScrollView,
+} from "react-native";
 import StoryArchivePanel from "@/components/StoryArchivePanel";
 import WelcomeOverlay from "@/components/WelcomeOverlay";
 import { supabase } from "@/lib/supabaseClient";
@@ -119,6 +133,18 @@ export default function WebMapLogic() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isRadarOpen, setIsRadarOpen] = useState(false);
   const [isVisitorListOpen, setVisitorListOpen] = useState(false); // 🌟 NEW STATE
+  // 🌟 NEW GENSHIN-STYLE OVERLAY STATES 🌟
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAuthModalOpen, setAuthModalOpen] = useState(false);
+
+  // Helper to trigger Auth if not logged in
+  const requireAuth = (action) => {
+    if (session?.user) {
+      action();
+    } else {
+      setAuthModalOpen(true);
+    }
+  };
 
   const [currentWorld, setCurrentWorld] = useState({
     id: "base",
@@ -134,6 +160,8 @@ export default function WebMapLogic() {
   const [viewedCities, setViewedCities] = useState(new Set());
   const mapRef = useRef(null);
   const { addToCart } = useCart();
+
+  const [is3D, setIs3D] = useState(true);
 
   // MULTIPLAYER STATES (GTA LOBBY & RADAR)
   const [activePartyMembers, setActivePartyMembers] = useState([]);
@@ -280,6 +308,52 @@ export default function WebMapLogic() {
     handleToggleStepExplored,
   } = useQuests(mapRef, setSelectedPin);
   const modalProducts = usePinProducts(selectedPin);
+
+  // 🌟 TOGGLE 2D/3D VIEW 🌟
+  const toggleMapPitch = () => {
+    if (mapRef.current) {
+      const newPitch = is3D ? 0 : 60;
+      mapRef.current.easeTo({ pitch: newPitch, duration: 1000 });
+      setIs3D(!is3D);
+    }
+  };
+
+  // 🌟 EXECUTE ROUTE & FRAME CAMERA 🌟
+  const executeDrawRoute = (pin) => {
+    if (!userLocation) {
+      toast.error("GPS required to draw route.", {
+        style: { background: "#2e3142", color: "#ef4444" },
+      });
+      return;
+    }
+
+    // 1. Close Modal and Draw Route
+    handleGetDirections(pin, () => setSelectedPin(null));
+
+    // 2. Force 2D Top-Down View
+    setIs3D(false);
+
+    // 3. Fit Camera to show both User and Pin
+    if (mapRef.current) {
+      const bounds = [
+        [
+          Math.min(userLocation[0], pin.lng),
+          Math.min(userLocation[1], pin.lat),
+        ], // SouthWest Corner
+        [
+          Math.max(userLocation[0], pin.lng),
+          Math.max(userLocation[1], pin.lat),
+        ], // NorthEast Corner
+      ];
+
+      mapRef.current.fitBounds(bounds, {
+        padding: { top: 150, bottom: 150, left: 100, right: 100 },
+        pitch: 0, // Force 2D
+        duration: 2000,
+        essential: true,
+      });
+    }
+  };
 
   const {
     handleGoToUserLocation,
@@ -582,363 +656,457 @@ export default function WebMapLogic() {
   const extraUsersCount = visibleUsers.length - maxVisibleAvatars;
 
   return (
-    <div className="absolute inset-0 w-full h-full bg-[#1c1d28] overflow-hidden">
+    <View className="flex-1 bg-[#1c1d28] relative">
       {!isAppReady && <WelcomeOverlay />}
 
-      <Suspense fallback={null}>
-        <Map
-          mapRef={mapRef}
-          displayedPins={[...displayedPins, ...dynamicPins]}
-          onPinClick={setSelectedPin}
-          selectedCity={selectedCity}
-          categoryIconMap={categoryIconMap}
-          onLoad={(mapInstance) => {
-            mapRef.current = mapInstance;
-            setMapLoaded(true);
-          }}
-          experienceRoute={viewingExperience}
-          userLocation={userLocation}
-          directionsRoute={directionsRoute}
-          onMapClick={handleMapClick}
-          partyLocations={Object.values(partyLocations)}
-        />
-      </Suspense>
+      {/* 🌟 LAYER 1: THE PERSISTENT MAP 🌟 */}
+      <View className="absolute inset-0" pointerEvents="auto">
+        <Suspense fallback={null}>
+          <Map
+            mapRef={mapRef}
+            displayedPins={[...displayedPins, ...dynamicPins]}
+            onPinClick={setSelectedPin}
+            selectedCity={selectedCity}
+            categoryIconMap={categoryIconMap}
+            onLoad={(mapInstance) => {
+              mapRef.current = mapInstance;
+              setMapLoaded(true);
+            }}
+            experienceRoute={viewingExperience}
+            userLocation={userLocation}
+            directionsRoute={directionsRoute}
+            onMapClick={handleMapClick}
+            partyLocations={Object.values(partyLocations)}
+          />
+        </Suspense>
+      </View>
 
+      {/* 🌟 WORLD TRANSITION OVERLAY 🌟 */}
       {worldTransition.isTransitioning && (
-        <div className="absolute inset-0 z-[99999] bg-[#1c1d28] flex flex-col items-center justify-center pointer-events-auto animate-in fade-in duration-500">
-          <div className="relative flex items-center justify-center mb-8">
-            <div className="absolute w-32 h-32 border-2 border-dashed border-[#3b3e52] rounded-full animate-[spin_4s_linear_infinite]" />
-            <div className="absolute w-24 h-24 border-2 border-[#d3bc8e]/50 rounded-full animate-[spin_3s_linear_infinite_reverse]" />
-            <div className="w-16 h-16 bg-[#e6ce9a] rounded-full shadow-[0_0_40px_rgba(230,206,154,0.6)] animate-pulse flex items-center justify-center">
+        <View className="absolute inset-0 z-[99999] bg-[#1c1d28] flex-col items-center justify-center pointer-events-auto">
+          <View className="relative flex items-center justify-center mb-8">
+            <View className="absolute w-32 h-32 border-2 border-dashed border-[#3b3e52] rounded-full animate-[spin_4s_linear_infinite]" />
+            <View className="absolute w-24 h-24 border-2 border-[#d3bc8e]/50 rounded-full animate-[spin_3s_linear_infinite_reverse]" />
+            <View className="w-16 h-16 bg-[#e6ce9a] rounded-full shadow-[0_0_40px_rgba(230,206,154,0.6)] animate-pulse items-center justify-center">
               <Globe size={28} color="#1c1d28" />
-            </div>
-          </div>
-          <p className="text-[#d3bc8e] font-black text-xl tracking-[0.15em] uppercase mb-3">
+            </View>
+          </View>
+          <Text className="text-[#d3bc8e] font-black text-xl tracking-[4px] uppercase mb-3">
             Syncing World Data
-          </p>
-          <p className="text-gray-400 font-medium tracking-wide text-sm">
+          </Text>
+          <Text className="text-gray-400 font-medium tracking-wide text-sm">
             Entering {worldTransition.hostName}...
-          </p>
-          <div className="w-48 h-1 bg-[#2e3142] rounded-full mt-8 overflow-hidden">
-            <div className="h-full bg-[#d3bc8e] w-full origin-left scale-x-0 animate-[scale-x_2s_ease-out_forwards]" />
-          </div>
-        </div>
+          </Text>
+        </View>
       )}
 
-      {/* 🌟 THE GTA RADAR OVERLAY 🌟 */}
+      {/* 🌟 LAYER 2: THE GENSHIN HUD (SAFE AREA) 🌟 */}
+      <SafeAreaView className="absolute inset-0" pointerEvents="box-none">
+        {/* LOADING INDICATOR */}
+        {isLoading && isAppReady && (
+          <View className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 items-center bg-[#1c1d28]/90 p-6 rounded-2xl">
+            <View className="w-12 h-12 rounded-full border-4 border-[#d3bc8e] border-t-transparent animate-spin mb-4" />
+            <Text className="text-[#d3bc8e] font-bold tracking-widest uppercase text-xs">
+              Loading Map...
+            </Text>
+          </View>
+        )}
+
+        {/* IOS INSTALL PROMPT */}
+        {showIosInstallPopup && (
+          <View className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-[#2e3142] border border-[#d3bc8e]/50 p-4 rounded-xl shadow-2xl pointer-events-auto w-[90%] max-w-sm">
+            <Text className="text-gray-300 font-medium text-sm mb-3 text-center">
+              To install, tap the Share icon and then 'Add to Home Screen'.
+            </Text>
+            <TouchableOpacity
+              onPress={closeIosInstallPopup}
+              className="bg-[#e6ce9a] py-3 rounded-full items-center"
+            >
+              <Text className="font-bold text-[#1c1d28]">Close</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isAppReady && (
+          <>
+            {/* TOP LEFT: AVATAR & WORLD */}
+            <View
+              className="absolute top-4 left-4 flex-row items-center gap-3"
+              pointerEvents="auto"
+            >
+              <TouchableOpacity
+                onPress={() => requireAuth(() => setIsProfileOpen(true))}
+                className="w-14 h-14 bg-[#1c1d28]/90 rounded-full border-2 border-[#d3bc8e] items-center justify-center shadow-lg active:scale-95 overflow-hidden"
+              >
+                {session?.user?.user_metadata?.avatar_url ? (
+                  <Image
+                    source={{ uri: session.user.user_metadata.avatar_url }}
+                    style={{ width: "100%", height: "100%" }}
+                  />
+                ) : (
+                  <User color="#d3bc8e" size={24} />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setQuestPanelOpen(true)}
+                className="bg-[#1c1d28]/90 border border-[#d3bc8e]/50 px-4 h-12 rounded-full flex-row items-center shadow-xl"
+              >
+                <Globe size={18} color="#d3bc8e" />
+                <Text
+                  className="text-white font-bold text-sm tracking-wide ml-2 max-w-[100px]"
+                  numberOfLines={1}
+                >
+                  {currentWorld.name}
+                </Text>
+                <ChevronDown size={16} color="#9ca3af" className="ml-2" />
+              </TouchableOpacity>
+            </View>
+
+            {/* 🌟 DYNAMIC NAVIGATION BUTTON (Appears when route is drawn) 🌟 */}
+            {directionsRoute && (
+              <View className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-xs px-4 pointer-events-auto items-center">
+                <TouchableOpacity className="bg-[#4ade80] px-8 py-4 rounded-full flex-row items-center shadow-[0_0_30px_rgba(74,222,128,0.4)] active:scale-95">
+                  <Route color="#1c1d28" size={20} className="mr-3" />
+                  <Text className="text-[#1c1d28] font-black text-lg tracking-widest uppercase">
+                    Start Nav
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* TOP CENTER: SEARCH */}
+            <View className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-xs sm:max-w-md px-4 pointer-events-auto hidden sm:flex">
+              <View className="bg-[#1c1d28]/90 border border-[#3b3e52] rounded-full flex-row items-center px-4 h-12 shadow-2xl">
+                <Search size={18} color="#d3bc8e" />
+                <TextInput
+                  placeholder={`Search ${selectedCity?.name || "locations"}...`}
+                  placeholderTextColor="#6b7280"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  className="flex-1 ml-3 text-white text-sm font-medium h-full outline-none"
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery("")}
+                    className="p-1"
+                  >
+                    <X size={16} color="#d3bc8e" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {searchResults.length > 0 && (
+                <View className="mt-2 bg-[#2e3142]/95 border border-[#3b3e52] rounded-2xl overflow-hidden shadow-2xl">
+                  {searchResults.map((pin) => (
+                    <TouchableOpacity
+                      key={pin.id}
+                      onPress={() => handleMapSearchSelect(pin)}
+                      className="w-full p-4 border-b border-[#3b3e52] flex-row items-center active:bg-[#3b3e52]"
+                    >
+                      <View className="bg-[#1c1d28] border border-[#d3bc8e]/50 p-2 rounded-full mr-4">
+                        <MapPin size={16} color="#d3bc8e" />
+                      </View>
+                      <View>
+                        <Text className="text-white font-bold text-sm">
+                          {pin.name}
+                        </Text>
+                        <Text className="text-[#d3bc8e] text-[10px] font-bold uppercase tracking-wider mt-1">
+                          {pin.category}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* TOP RIGHT: MINIMAP & TOOLS */}
+            <View
+              className="absolute top-4 right-4 items-end"
+              pointerEvents="auto"
+            >
+              <TouchableOpacity
+                onPress={() => setIsRadarOpen(true)}
+                className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-[#3b3e52] bg-[#1c1d28]/80 shadow-2xl items-center justify-center overflow-hidden"
+              >
+                <View className="w-2.5 h-2.5 bg-[#e6ce9a] rounded-full shadow-[0_0_10px_3px_rgba(230,206,154,0.8)] z-10" />
+                <View className="absolute bottom-3 bg-[#1c1d28]/95 px-2 py-0.5 rounded border border-[#3b3e52]">
+                  <Text className="text-[9px] font-black text-[#d3bc8e] uppercase tracking-widest">
+                    {currentWorld.id === "base"
+                      ? selectedCity?.name || "WORLD"
+                      : currentWorld.name}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Map Tools Column */}
+              <View className="flex-col gap-3 mt-4">
+                {/* 🌟 NEW: 2D/3D TOGGLE 🌟 */}
+                <TouchableOpacity
+                  onPress={toggleMapPitch}
+                  className="bg-[#2e3142]/90 border border-[#3b3e52] rounded-full h-12 w-12 items-center justify-center shadow-lg active:scale-95"
+                >
+                  <Text className="text-[#d3bc8e] font-black text-sm">
+                    {is3D ? "2D" : "3D"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => requireAuth(() => setIsChatOpen(true))}
+                  className="bg-[#2e3142]/90 border border-[#3b3e52] rounded-full h-12 w-12 items-center justify-center shadow-lg active:scale-95"
+                >
+                  <MessageSquare color="#d3bc8e" size={20} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleGoToUserLocation}
+                  className="bg-[#2e3142]/90 border border-[#3b3e52] rounded-full h-12 w-12 items-center justify-center shadow-lg active:scale-95"
+                >
+                  <Crosshair color="#d3bc8e" size={20} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* BOTTOM NAV */}
+            <View
+              className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 flex-row items-center justify-center gap-2"
+              pointerEvents="auto"
+            >
+              <TouchableOpacity
+                onPress={() => setLocatorOpen(true)}
+                className="h-14 w-14 rounded-full bg-[#2e3142] border border-[#3b3e52] items-center justify-center shadow-lg"
+              >
+                <MapPin color="#d3bc8e" size={24} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setFilterPanelOpen(true)}
+                className="flex-1 rounded-full h-14 bg-[#e6ce9a] items-center justify-center flex-row shadow-[0_0_20px_rgba(230,206,154,0.3)]"
+              >
+                <Search color="#1c1d28" size={20} />
+                <Text className="text-[#1c1d28] font-black text-base ml-2">
+                  Explore
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setQuestPanelOpen(true)}
+                className="h-14 w-14 rounded-full bg-[#2e3142] border border-[#3b3e52] items-center justify-center shadow-lg"
+              >
+                <Route color="#d3bc8e" size={24} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setStoryArchiveOpen(true)}
+                className="h-14 w-14 rounded-full bg-[#2e3142] border border-[#3b3e52] items-center justify-center shadow-lg"
+              >
+                <BookOpen color="#d3bc8e" size={24} />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </SafeAreaView>
+
+      {/* 🌟 LAYER 3: MODALS & SLIDE-OVERS 🌟 */}
+
+      {/* THE GTA RADAR */}
       {isRadarOpen && (
-        <div className="absolute inset-0 z-[99999] bg-black pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+        <View className="absolute inset-0 z-[99999] bg-black pointer-events-auto">
           <RadarMap
             userLocation={userLocation}
             walkedPath={walkedPath}
             partyLocations={Object.values(partyLocations)}
           />
-
-          <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center pointer-events-none">
-            <div className="bg-[#1c1d28]/90 backdrop-blur-md border border-[#3b3e52] px-6 py-3 rounded-full flex items-center gap-3 shadow-2xl pointer-events-auto">
-              <Radar className="text-[#d3bc8e] h-6 w-6 animate-[spin_3s_linear_infinite]" />
-              <span className="text-xl font-black text-white tracking-widest uppercase">
+          <View className="absolute top-6 w-full px-6 flex-row justify-between items-center pointer-events-box-none">
+            <View className="bg-[#1c1d28]/90 border border-[#3b3e52] px-6 py-3 rounded-full flex-row items-center gap-3">
+              <Radar
+                color="#d3bc8e"
+                size={24}
+                className="animate-[spin_3s_linear_infinite]"
+              />
+              <Text className="text-xl font-black text-white tracking-widest uppercase">
                 Radar
-              </span>
-            </div>
-            <button
-              onClick={() => setIsRadarOpen(false)}
-              className="p-3 bg-[#2e3142]/90 backdrop-blur-md rounded-full border border-[#3b3e52] hover:bg-[#3b3e52] transition-colors pointer-events-auto shadow-2xl"
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setIsRadarOpen(false)}
+              className="p-3 bg-[#2e3142]/90 rounded-full border border-[#3b3e52]"
             >
-              <X size={24} className="text-[#d3bc8e]" />
-            </button>
-          </div>
-
-          <div className="absolute bottom-10 left-6 bg-[#1c1d28]/90 backdrop-blur-md border border-[#3b3e52] p-4 rounded-2xl pointer-events-none shadow-2xl">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-3 h-3 bg-white rounded-full border border-black shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
-              <span className="text-white font-bold text-xs">You</span>
-            </div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-3 h-3 bg-blue-500 rounded-full border border-black shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
-              <span className="text-white font-bold text-xs">Party Member</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 bg-black rounded-full border border-gray-600 opacity-80" />
-              <span className="text-gray-400 font-bold text-xs">
-                Unexplored Area
-              </span>
-            </div>
-          </div>
-        </div>
+              <X size={24} color="#d3bc8e" />
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
-      <div className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none">
-        {isLoading && isAppReady && (
-          <div className="absolute inset-0 bg-[#1c1d28]/95 z-50 flex flex-col p-6 pointer-events-auto">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
-              <div className="w-12 h-12 rounded-full border-4 border-[#d3bc8e] border-t-transparent animate-spin mb-4" />
-              <span className="text-[#d3bc8e] font-bold tracking-widest uppercase text-xs">
-                Loading Map...
-              </span>
-            </div>
-          </div>
-        )}
-
-        {showIosInstallPopup && (
-          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-[#2e3142] border border-[#d3bc8e]/50 p-4 rounded-xl shadow-2xl pointer-events-auto z-50 text-center max-w-sm w-[90%]">
-            <p className="text-gray-300 font-medium text-sm mb-3">
-              To install, tap the Share icon and then 'Add to Home Screen'.
-            </p>
-            <button
-              onClick={closeIosInstallPopup}
-              className="bg-[#e6ce9a] px-6 py-2 rounded-full font-bold text-[#1c1d28]"
-            >
-              Close
-            </button>
-          </div>
-        )}
-
-        {isAppReady && (
-          <>
-            <div className="absolute top-4 left-4 pointer-events-auto flex items-center gap-3">
-              <Button
-                variant="secondary"
-                className="bg-[#1c1d28]/80 backdrop-blur-md border border-[#3b3e52] shadow-xl hover:bg-[#2e3142] rounded-full h-12 w-12 p-0 flex items-center justify-center transition-all"
-                onClick={() => router.push("/")}
+      {/* CREATE PIN MODAL (FULLY NATIVE RN) */}
+      {isCreatePinModalOpen && (
+        <View className="absolute inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 pointer-events-auto">
+          <View className="bg-[#2e3142] border border-[#3b3e52] rounded-3xl p-6 w-full max-w-md shadow-2xl relative overflow-hidden">
+            <View className="flex-row justify-between items-center mb-6 mt-2">
+              <View>
+                <Text className="text-2xl font-black text-white flex-row items-center gap-2">
+                  <MapPin color="#d3bc8e" size={24} /> Drop Location
+                </Text>
+                <Text className="text-gray-400 text-xs font-mono mt-1">
+                  {newPinData.lat?.toFixed(5)}°, {newPinData.lng?.toFixed(5)}°
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setCreatePinModalOpen(false)}
+                className="p-2 bg-[#1c1d28] rounded-full border border-[#3b3e52]"
               >
-                <ArrowLeft className="h-6 w-6 text-[#d3bc8e]" />
-              </Button>
-              <button
-                onClick={() => setQuestPanelOpen(true)}
-                className="bg-[#1c1d28]/90 backdrop-blur-md border border-[#d3bc8e]/50 px-4 h-12 rounded-full flex items-center shadow-xl hover:bg-[#2e3142] transition-colors"
-              >
-                <Globe size={18} className="text-[#d3bc8e] mr-2" />
-                <span className="text-white font-bold text-sm tracking-wide max-w-[120px] truncate">
-                  {currentWorld.name}
-                </span>
-                <ChevronDown size={16} className="text-gray-400 ml-2" />
-              </button>
-            </div>
+                <X color="#9ca3af" size={20} />
+              </TouchableOpacity>
+            </View>
 
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-xs sm:max-w-md px-4 pointer-events-auto z-50 hidden sm:block">
-              <div className="bg-[#1c1d28]/90 backdrop-blur-md border border-[#3b3e52] rounded-full flex items-center px-4 h-12 shadow-2xl transition-all focus-within:bg-[#2e3142] focus-within:border-[#d3bc8e]">
-                <Search size={18} className="text-[#d3bc8e]" />
-                <input
-                  type="text"
-                  placeholder={`Search ${selectedCity?.name || "locations"}...`}
-                  className="bg-transparent text-white flex-1 ml-3 outline-none text-sm placeholder-gray-500 font-medium"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+            <View className="space-y-4 mb-8">
+              <View>
+                <Text className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider mb-2">
+                  Location Name
+                </Text>
+                <TextInput
+                  className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52]"
+                  placeholder="e.g., Secret Rooftop Cafe"
+                  placeholderTextColor="#6b7280"
+                  value={newPinData.name}
+                  onChangeText={(text) =>
+                    setNewPinData({ ...newPinData, name: text })
+                  }
                 />
-                {searchQuery.length > 0 && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="p-1 hover:bg-[#3b3e52] rounded-full transition-colors"
+              </View>
+
+              <View>
+                <View className="flex-row justify-between items-end mb-2 mt-4">
+                  <Text className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider">
+                    List / Category
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsCreatingNewList(!isCreatingNewList);
+                      setNewPinData({
+                        ...newPinData,
+                        category: isCreatingNewList ? "Favorites" : "",
+                      });
+                    }}
                   >
-                    <X size={16} className="text-[#d3bc8e]" />
-                  </button>
-                )}
-              </div>
-              {searchResults.length > 0 && (
-                <div className="mt-2 bg-[#2e3142]/95 backdrop-blur-md border border-[#3b3e52] rounded-2xl overflow-hidden shadow-2xl">
-                  {searchResults.map((pin) => (
-                    <button
-                      key={pin.id}
-                      onClick={() => handleMapSearchSelect(pin)}
-                      className="w-full text-left p-4 border-b border-[#3b3e52] flex items-center hover:bg-[#3b3e52] transition-colors"
-                    >
-                      <div className="bg-[#1c1d28] border border-[#d3bc8e]/50 p-2 rounded-full mr-4">
-                        <MapPin size={16} className="text-[#d3bc8e]" />
-                      </div>
-                      <div>
-                        <p className="text-white font-bold text-sm leading-tight">
-                          {pin.name}
-                        </p>
-                        <p className="text-[#d3bc8e] text-[10px] font-bold uppercase tracking-wider mt-1">
-                          {pin.category}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <Text className="text-[#d3bc8e] text-[10px] font-bold uppercase tracking-wider bg-[#1c1d28] px-2 py-1 rounded-md border border-[#3b3e52]">
+                      {isCreatingNewList ? "Choose Existing" : "+ New List"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-            {/* CLICKABLE GTA MINIMAP */}
-            <div
-              onClick={() => setIsRadarOpen(true)}
-              className="absolute top-4 right-4 w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-[#3b3e52] bg-[#1c1d28]/80 backdrop-blur-md shadow-2xl overflow-hidden pointer-events-auto flex items-center justify-center cursor-pointer hover:border-[#d3bc8e] transition-colors group"
-            >
-              <div
-                className="absolute inset-0 opacity-30 group-hover:opacity-40 transition-opacity"
-                style={{
-                  backgroundImage:
-                    "radial-gradient(circle at center, transparent 20%, #000 100%), repeating-linear-gradient(0deg, transparent, transparent 10px, rgba(211,188,142,0.15) 10px, rgba(211,188,142,0.15) 11px), repeating-linear-gradient(90deg, transparent, transparent 10px, rgba(211,188,142,0.15) 10px, rgba(211,188,142,0.15) 11px)",
-                }}
-              ></div>
-              <div className="w-2.5 h-2.5 bg-[#e6ce9a] rounded-full shadow-[0_0_10px_3px_rgba(230,206,154,0.8)] z-10 group-hover:scale-125 transition-transform"></div>
-              <div className="absolute top-1/2 left-1/2 w-0 h-0 border-l-[20px] border-r-[20px] border-b-[35px] border-l-transparent border-r-transparent border-b-[#e6ce9a]/20 -translate-x-1/2 -translate-y-full origin-bottom"></div>
-              <div className="absolute bottom-3 bg-[#1c1d28]/95 px-2 py-0.5 rounded border border-[#3b3e52] text-[9px] font-black text-[#d3bc8e] uppercase tracking-widest max-w-[80%] truncate">
-                {currentWorld.id === "base"
-                  ? selectedCity?.name || "BASE WORLD"
-                  : currentWorld.name}
-              </div>
-            </div>
-
-            {/* 🌟 NEW: THE AVATAR BUNDLE UNDER THE MINIMAP 🌟 */}
-            {visibleUsers.length > 0 && (
-              <div className="absolute top-36 sm:top-40 right-4 sm:right-6 pointer-events-auto">
-                <div
-                  onClick={() => setVisitorListOpen(true)}
-                  className="flex flex-row items-center justify-end cursor-pointer hover:scale-105 transition-transform active:scale-95"
-                  title="View Party Members"
-                >
-                  {visibleUsers
-                    .slice(0, maxVisibleAvatars)
-                    .map((member, idx) => (
-                      <div
-                        key={member.userId}
-                        className={`w-10 h-10 rounded-full border-2 border-[#1c1d28] bg-[#2e3142] overflow-hidden shadow-lg ${
-                          idx > 0 ? "-ml-4" : ""
+                {isCreatingNewList ? (
+                  <TextInput
+                    className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52]"
+                    placeholder="e.g., Hidden Gems"
+                    placeholderTextColor="#6b7280"
+                    value={newPinData.category}
+                    onChangeText={(text) =>
+                      setNewPinData({ ...newPinData, category: text })
+                    }
+                  />
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    className="flex-row pb-2"
+                  >
+                    {existingLists.map((listName) => (
+                      <TouchableOpacity
+                        key={listName}
+                        onPress={() =>
+                          setNewPinData({ ...newPinData, category: listName })
+                        }
+                        className={`mr-2 px-4 py-3 rounded-xl border ${
+                          newPinData.category === listName
+                            ? "bg-[#d3bc8e] border-[#d3bc8e]"
+                            : "bg-[#1c1d28] border-[#3b3e52]"
                         }`}
-                        style={{ zIndex: 10 - idx }}
                       >
-                        <img
-                          src={member.avatar_url}
-                          alt={member.username}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
+                        <Text
+                          className={
+                            newPinData.category === listName
+                              ? "text-[#1c1d28] font-bold"
+                              : "text-gray-400 font-medium"
+                          }
+                        >
+                          {listName}
+                        </Text>
+                      </TouchableOpacity>
                     ))}
-                  {extraUsersCount > 0 && (
-                    <div
-                      className="w-10 h-10 rounded-full border-2 border-[#1c1d28] bg-[#d3bc8e] text-[#1c1d28] flex items-center justify-center font-black text-sm shadow-lg -ml-4"
-                      style={{ zIndex: 0 }}
-                    >
-                      +{extraUsersCount}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+                  </ScrollView>
+                )}
+              </View>
 
-            {/* 🌟 NEW: THE VISITOR LIST POPUP MENU 🌟 */}
-            {isVisitorListOpen && (
-              <div className="absolute top-[190px] sm:top-[210px] right-4 sm:right-6 w-64 bg-[#2e3142]/95 backdrop-blur-md border border-[#3b3e52] rounded-2xl shadow-2xl p-4 pointer-events-auto animate-in fade-in slide-in-from-top-2 z-50">
-                <div className="flex justify-between items-center mb-3 border-b border-[#3b3e52] pb-2">
-                  <h3 className="text-[#d3bc8e] font-bold text-xs tracking-widest uppercase flex items-center gap-2">
-                    <Users size={14} />
-                    {currentWorld.id === "base"
-                      ? "Shared Locations"
-                      : "World Party"}
-                  </h3>
-                  <button onClick={() => setVisitorListOpen(false)}>
-                    <X size={16} className="text-gray-400 hover:text-white" />
-                  </button>
-                </div>
-                <div className="max-h-48 overflow-y-auto space-y-3 pt-1">
-                  {visibleUsers.map((member) => (
-                    <div
-                      key={member.userId}
-                      className="flex items-center gap-3"
-                    >
-                      <img
-                        src={member.avatar_url}
-                        className="w-8 h-8 rounded-full border border-[#d3bc8e]"
-                        alt={member.username}
-                      />
-                      <span className="text-white font-medium text-sm truncate">
-                        {member.username}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+              <View className="mt-2">
+                <Text className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider mb-2">
+                  Description / Notes
+                </Text>
+                <TextInput
+                  className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52]"
+                  placeholder="What makes this place special?"
+                  placeholderTextColor="#6b7280"
+                  multiline={true}
+                  numberOfLines={4}
+                  value={newPinData.description}
+                  onChangeText={(text) =>
+                    setNewPinData({ ...newPinData, description: text })
+                  }
+                  style={{ minHeight: 100, textAlignVertical: "top" }}
+                />
+              </View>
+            </View>
 
-            {/* Moved Tools down slightly to make room for avatars */}
-            <div className="absolute top-[200px] sm:top-[220px] right-4 pointer-events-auto flex flex-col gap-3">
-              <button
-                onClick={() => setIsChatOpen(true)}
-                className="bg-[#2e3142]/90 border border-[#3b3e52] backdrop-blur-md rounded-full h-12 w-12 flex items-center justify-center shadow-lg hover:bg-[#3b3e52] transition-all active:scale-95 relative"
-                title="Messages"
-              >
-                <MessageSquare className="h-5 w-5 text-[#d3bc8e]" />
-                <div className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#2e3142]" />
-              </button>
-              <button
-                onClick={handleGoToUserLocation}
-                className="bg-[#2e3142]/90 border border-[#3b3e52] backdrop-blur-md rounded-full h-12 w-12 flex items-center justify-center shadow-lg hover:bg-[#3b3e52] transition-all active:scale-95"
-                title="My Location"
-              >
-                <Crosshair className="h-5 w-5 text-[#d3bc8e]" />
-              </button>
-            </div>
-
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 pointer-events-auto flex items-center justify-center gap-2">
-              <Button
-                size="icon"
-                variant="secondary"
-                className="h-14 w-14 rounded-full shadow-lg bg-[#2e3142] border border-[#3b3e52] text-[#d3bc8e] hover:bg-[#3b3e52] flex-shrink-0 transition-colors"
-                onClick={() => setLocatorOpen(true)}
-                title="Quick Locator"
-              >
-                <MapPin className="h-6 w-6" />
-              </Button>
-              <Button
-                size="lg"
-                className="flex-1 shadow-[0_0_20px_rgba(230,206,154,0.3)] rounded-full h-14 text-base font-black bg-[#e6ce9a] text-[#1c1d28] hover:bg-[#d3bc8e] transition-colors"
-                onClick={() => setFilterPanelOpen(true)}
-              >
-                <Search className="h-5 w-5 mr-2" /> Explore
-              </Button>
-              <Button
-                size="icon"
-                className="h-14 w-14 rounded-full shadow-lg bg-[#2e3142] border border-[#3b3e52] text-[#d3bc8e] hover:bg-[#3b3e52] flex-shrink-0 transition-colors"
-                onClick={() => setQuestPanelOpen(true)}
-              >
-                <Route className="h-6 w-6" />
-              </Button>
-              <Button
-                size="icon"
-                className="h-14 w-14 rounded-full shadow-lg bg-[#2e3142] border border-[#3b3e52] text-[#d3bc8e] hover:bg-[#3b3e52] flex-shrink-0 transition-colors"
-                onClick={() => setStoryArchiveOpen(true)}
-                title="Story Archive"
-              >
-                <BookOpen className="h-6 w-6" />
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-
-      {isLocatorOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setLocatorOpen(false)}
-          />
-          <QuickLocator
-            isOpen={isLocatorOpen}
-            onClose={() => setLocatorOpen(false)}
-            cities={CITY_DATA}
-            onCitySelect={(cityKey) => {
-              handleCitySelect(cityKey);
-              setLocatorOpen(false);
-              setTimeout(() => setLocatorOpen(false), 100);
-            }}
-            onResetView={() => {
-              handleResetView();
-              setLocatorOpen(false);
-              setTimeout(() => setLocatorOpen(false), 100);
-            }}
-          />
-        </>
+            <TouchableOpacity
+              className="w-full bg-[#e6ce9a] py-4 rounded-xl flex-row justify-center items-center gap-2 shadow-[0_0_20px_rgba(230,206,154,0.3)]"
+              onPress={handleCreatePin}
+              disabled={isSubmittingPin}
+            >
+              {isSubmittingPin ? (
+                <View className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#1c1d28]" />
+              ) : (
+                <>
+                  <Check color="#1c1d28" size={20} />
+                  <Text className="text-[#1c1d28] font-bold text-lg">
+                    Save Location
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
+      {/* EXTERNAL MODALS */}
+      {isLocatorOpen && (
+        <QuickLocator
+          isOpen={isLocatorOpen}
+          onClose={() => setLocatorOpen(false)}
+          cities={CITY_DATA}
+          onCitySelect={(key) => {
+            handleCitySelect(key);
+            setLocatorOpen(false);
+          }}
+          onResetView={() => {
+            handleResetView();
+            setLocatorOpen(false);
+          }}
+        />
+      )}
       <ChatHub
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
         userLocation={userLocation}
         mapRef={mapRef}
-        // 🌟 ADD THIS NEW PROP:
         currentWorld={currentWorld}
+      />
+
+      {/* 🌟 ADD THE NEW PROFILE COMPONENT HERE 🌟 */}
+      <ProfilePanel
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+      />
+
+      {/* 🌟 AUTH MODAL 🌟 */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setAuthModalOpen(false)}
       />
 
       <QuestPanel
@@ -957,8 +1125,8 @@ export default function WebMapLogic() {
         onEnterWorld={handleEnterWorld}
         dynamicPins={dynamicPins}
         currentWorld={currentWorld}
+        onRequestAuth={() => setAuthModalOpen(true)}
       />
-
       <StoryArchivePanel
         isOpen={isStoryArchiveOpen}
         onClose={() => setStoryArchiveOpen(false)}
@@ -979,146 +1147,11 @@ export default function WebMapLogic() {
         onClose={() => setSelectedPin(null)}
         onAddToCart={addToCart}
         onReadStory={handleReadStory}
-        onGetDirections={(pin) =>
-          handleGetDirections(pin, () => setSelectedPin(null))
-        }
+        onGetDirections={executeDrawRoute}
         products={modalProducts.data}
         productsStatus={modalProducts.status}
+        onRequestAuth={() => setAuthModalOpen(true)}
       />
-
-      {isCreatePinModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto p-4 transition-all">
-          <div className="bg-[#2e3142] border border-[#3b3e52] rounded-3xl p-6 w-full max-w-md shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#e6ce9a] to-[#d3bc8e]"></div>
-            <div className="flex justify-between items-center mb-6 mt-2">
-              <div>
-                <h2 className="text-2xl font-black text-white flex items-center gap-2">
-                  <MapPin className="text-[#d3bc8e] h-6 w-6" /> Drop Location
-                </h2>
-                <p className="text-gray-400 text-xs font-mono mt-1">
-                  {newPinData.lat?.toFixed(5)}°, {newPinData.lng?.toFixed(5)}°
-                </p>
-              </div>
-              <button
-                onClick={() => setCreatePinModalOpen(false)}
-                className="p-2 bg-[#1c1d28] rounded-full hover:bg-[#3b3e52] text-gray-400 hover:text-white transition-colors border border-[#3b3e52]"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4 mb-8">
-              <div>
-                <label className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider mb-2 block">
-                  Location Name
-                </label>
-                <input
-                  className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52] focus:border-[#d3bc8e] outline-none"
-                  placeholder="e.g., Secret Rooftop Cafe"
-                  value={newPinData.name}
-                  onChange={(e) =>
-                    setNewPinData({ ...newPinData, name: e.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between items-end mb-2">
-                  <label className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider block">
-                    List / Category
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreatingNewList(!isCreatingNewList);
-                      if (!isCreatingNewList)
-                        setNewPinData({ ...newPinData, category: "" });
-                      else
-                        setNewPinData({ ...newPinData, category: "Favorites" });
-                    }}
-                    className="text-[#d3bc8e] text-[10px] font-bold uppercase tracking-wider hover:text-white transition-colors bg-[#1c1d28] px-2 py-1 rounded-md border border-[#3b3e52]"
-                  >
-                    {isCreatingNewList ? "Choose Existing" : "+ New List"}
-                  </button>
-                </div>
-
-                {isCreatingNewList ? (
-                  <input
-                    className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52] focus:border-[#d3bc8e] outline-none"
-                    placeholder="e.g., Hidden Gems"
-                    value={newPinData.category}
-                    onChange={(e) =>
-                      setNewPinData({ ...newPinData, category: e.target.value })
-                    }
-                  />
-                ) : (
-                  <select
-                    className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52] focus:border-[#d3bc8e] outline-none appearance-none"
-                    value={newPinData.category}
-                    onChange={(e) =>
-                      setNewPinData({ ...newPinData, category: e.target.value })
-                    }
-                  >
-                    {existingLists.map((listName) => (
-                      <option
-                        key={listName}
-                        value={listName}
-                        className="bg-[#1c1d28]"
-                      >
-                        {listName}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div>
-                <label className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider mb-2 block">
-                  Image URL
-                </label>
-                <input
-                  className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52] focus:border-[#d3bc8e] outline-none"
-                  placeholder="https://example.com/image.jpg"
-                  value={newPinData.image_url}
-                  onChange={(e) =>
-                    setNewPinData({ ...newPinData, image_url: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider mb-2 block">
-                  Description / Notes
-                </label>
-                <textarea
-                  className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52] focus:border-[#d3bc8e] outline-none h-24 resize-none"
-                  placeholder="What makes this place special?"
-                  value={newPinData.description}
-                  onChange={(e) =>
-                    setNewPinData({
-                      ...newPinData,
-                      description: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <button
-              className="w-full bg-[#e6ce9a] text-[#1c1d28] py-4 rounded-xl font-bold active:bg-[#d3bc8e] flex justify-center items-center gap-2 shadow-[0_0_20px_rgba(230,206,154,0.3)]"
-              onClick={handleCreatePin}
-              disabled={isSubmittingPin}
-            >
-              {isSubmittingPin ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#1c1d28]"></div>
-              ) : (
-                <>
-                  <Check className="h-5 w-5" /> Save Location
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    </View>
   );
 }
