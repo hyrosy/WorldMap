@@ -29,7 +29,11 @@ import {
   Radar,
   User, // 🌟 ADDED FOR AVATAR
   Users, // 🌟 ADDED USERS ICON
-} from "lucide-react";
+  Car, // 🌟 ADD THIS
+  Footprints, // 🌟 ADD THIS (For walking)
+  Bike, // 🌟 ADD THIS
+  Navigation, // 🌟 ADD THIS
+} from "lucide-react-native";
 // 🌟 ADD THESE IMPORTS 🌟
 import {
   View,
@@ -40,6 +44,7 @@ import {
   SafeAreaView,
   Platform,
   ScrollView,
+  ActivityIndicator, // 🌟 ADD THIS RIGHT HERE
 } from "react-native";
 import StoryArchivePanel from "@/components/StoryArchivePanel";
 import WelcomeOverlay from "@/components/WelcomeOverlay";
@@ -160,8 +165,6 @@ export default function WebMapLogic() {
   const [viewedCities, setViewedCities] = useState(new Set());
   const mapRef = useRef(null);
   const { addToCart } = useCart();
-
-  const [is3D, setIs3D] = useState(true);
 
   // MULTIPLAYER STATES (GTA LOBBY & RADAR)
   const [activePartyMembers, setActivePartyMembers] = useState([]);
@@ -308,52 +311,6 @@ export default function WebMapLogic() {
     handleToggleStepExplored,
   } = useQuests(mapRef, setSelectedPin);
   const modalProducts = usePinProducts(selectedPin);
-
-  // 🌟 TOGGLE 2D/3D VIEW 🌟
-  const toggleMapPitch = () => {
-    if (mapRef.current) {
-      const newPitch = is3D ? 0 : 60;
-      mapRef.current.easeTo({ pitch: newPitch, duration: 1000 });
-      setIs3D(!is3D);
-    }
-  };
-
-  // 🌟 EXECUTE ROUTE & FRAME CAMERA 🌟
-  const executeDrawRoute = (pin) => {
-    if (!userLocation) {
-      toast.error("GPS required to draw route.", {
-        style: { background: "#2e3142", color: "#ef4444" },
-      });
-      return;
-    }
-
-    // 1. Close Modal and Draw Route
-    handleGetDirections(pin, () => setSelectedPin(null));
-
-    // 2. Force 2D Top-Down View
-    setIs3D(false);
-
-    // 3. Fit Camera to show both User and Pin
-    if (mapRef.current) {
-      const bounds = [
-        [
-          Math.min(userLocation[0], pin.lng),
-          Math.min(userLocation[1], pin.lat),
-        ], // SouthWest Corner
-        [
-          Math.max(userLocation[0], pin.lng),
-          Math.max(userLocation[1], pin.lat),
-        ], // NorthEast Corner
-      ];
-
-      mapRef.current.fitBounds(bounds, {
-        padding: { top: 150, bottom: 150, left: 100, right: 100 },
-        pitch: 0, // Force 2D
-        duration: 2000,
-        essential: true,
-      });
-    }
-  };
 
   const {
     handleGoToUserLocation,
@@ -621,6 +578,34 @@ export default function WebMapLogic() {
     }
   }, [isAppReady, selectedCity, viewedCities]);
 
+  // 🌟 SAFARI FULLSCREEN & THEME COLOR FIX 🌟
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      // 1. Force the HTML body to match your dark theme
+      document.body.style.backgroundColor = "#1c1d28";
+      document.body.style.margin = "0";
+      document.body.style.overflow = "hidden"; // Prevents the rubber-band bounce effect
+
+      // 2. Inject the Meta Theme Color so the Safari Notch/Search Bar blends in
+      let metaThemeColor = document.querySelector("meta[name=theme-color]");
+      if (!metaThemeColor) {
+        metaThemeColor = document.createElement("meta");
+        metaThemeColor.name = "theme-color";
+        document.head.appendChild(metaThemeColor);
+      }
+      metaThemeColor.setAttribute("content", "#1c1d28");
+
+      // 3. Inject Viewport Fit Cover (Fills the screen edge-to-edge)
+      let metaViewport = document.querySelector("meta[name=viewport]");
+      if (metaViewport) {
+        metaViewport.setAttribute(
+          "content",
+          "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+        );
+      }
+    }
+  }, []);
+
   const handleResetView = () => {
     if (mapRef.current && isMapLoaded)
       mapRef.current.flyTo({ center: [-5.5, 32], zoom: 15.5, essential: true });
@@ -655,8 +640,115 @@ export default function WebMapLogic() {
   const maxVisibleAvatars = 3;
   const extraUsersCount = visibleUsers.length - maxVisibleAvatars;
 
+  // ==========================================
+  // 🌟 CAMERA & NAVIGATION ENGINE 🌟
+  // ==========================================
+
+  const [is3D, setIs3D] = useState(true);
+  const [navState, setNavState] = useState("idle"); // "idle" | "preview" | "active"
+  const [navProfile, setNavProfile] = useState("walking"); // "walking" | "driving" | "cycling"
+  const [navTargetPin, setNavTargetPin] = useState(null);
+  const [routeStats, setRouteStats] = useState({
+    distance: 0,
+    duration: 0,
+    geometry: null,
+  });
+  const [isFetchingRoute, setIsFetchingRoute] = useState(false);
+  const toggleMapPitch = () => {
+    if (mapRef.current) {
+      const newPitch = is3D ? 0 : 60;
+      mapRef.current.easeTo({ pitch: newPitch, duration: 1000 });
+      setIs3D(!is3D);
+    }
+  };
+
+  const fetchRouteData = async (pin, profile = "walking") => {
+    if (!userLocation || !pin) return;
+    setIsFetchingRoute(true);
+    setNavProfile(profile);
+
+    try {
+      const MAPBOX_TOKEN =
+        process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
+        process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${userLocation[0]},${userLocation[1]};${pin.lng},${pin.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const distanceKm = (route.distance / 1000).toFixed(1);
+        const durationMin = Math.round(route.duration / 60);
+
+        setRouteStats({
+          distance: distanceKm,
+          duration: durationMin,
+          geometry: route.geometry,
+        });
+
+        if (mapRef.current && navState !== "active") {
+          setIs3D(false);
+          const bounds = [
+            [
+              Math.min(userLocation[0], pin.lng),
+              Math.min(userLocation[1], pin.lat),
+            ],
+            [
+              Math.max(userLocation[0], pin.lng),
+              Math.max(userLocation[1], pin.lat),
+            ],
+          ];
+          mapRef.current.fitBounds(bounds, {
+            padding: { top: 150, bottom: 250, left: 100, right: 100 },
+            pitch: 0,
+            duration: 1500,
+            essential: true,
+          });
+        }
+      }
+    } catch (error) {
+      toast.error("Could not calculate route.");
+    } finally {
+      setIsFetchingRoute(false);
+    }
+  };
+
+  const executeDrawRoute = (pin) => {
+    if (!userLocation) return toast.error("GPS required to draw route.");
+    setSelectedPin(null);
+    setNavTargetPin(pin);
+    setNavState("preview");
+    fetchRouteData(pin, "walking");
+  };
+
+  const cancelNavigation = () => {
+    setNavState("idle");
+    setNavTargetPin(null);
+    setRouteStats({ distance: 0, duration: 0, geometry: null });
+    setIs3D(true);
+    if (mapRef.current) mapRef.current.easeTo({ pitch: 60, duration: 1000 });
+  };
+
+  const startActiveNavigation = () => {
+    setNavState("active");
+    setIs3D(true);
+    if (mapRef.current) {
+      mapRef.current.flyTo({
+        center: userLocation,
+        zoom: 18,
+        pitch: 60,
+        duration: 2000,
+        essential: true,
+      });
+    }
+  };
+
   return (
-    <View className="flex-1 bg-[#1c1d28] relative">
+    <View
+      className="flex-1 bg-[#1c1d28] relative w-full"
+      style={{ height: Platform.OS === "web" ? "100dvh" : "100%" }}
+    >
       {!isAppReady && <WelcomeOverlay />}
 
       {/* 🌟 LAYER 1: THE PERSISTENT MAP 🌟 */}
@@ -674,9 +766,9 @@ export default function WebMapLogic() {
             }}
             experienceRoute={viewingExperience}
             userLocation={userLocation}
-            directionsRoute={directionsRoute}
             onMapClick={handleMapClick}
             partyLocations={Object.values(partyLocations)}
+            directionsRoute={routeStats.geometry} // 🌟 PASSED TO MAP.JS TO DRAW THE LINE
           />
         </Suspense>
       </View>
@@ -763,13 +855,131 @@ export default function WebMapLogic() {
               </TouchableOpacity>
             </View>
 
-            {/* 🌟 DYNAMIC NAVIGATION BUTTON (Appears when route is drawn) 🌟 */}
-            {directionsRoute && (
-              <View className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-xs px-4 pointer-events-auto items-center">
-                <TouchableOpacity className="bg-[#4ade80] px-8 py-4 rounded-full flex-row items-center shadow-[0_0_30px_rgba(74,222,128,0.4)] active:scale-95">
-                  <Route color="#1c1d28" size={20} className="mr-3" />
-                  <Text className="text-[#1c1d28] font-black text-lg tracking-widest uppercase">
-                    Start Nav
+            {/* 🌟 GOOGLE MAPS STYLE NAVIGATION UI 🌟 */}
+
+            {/* 1. THE PRE-NAV SLIDER (Preview Mode) */}
+            {navState === "preview" && navTargetPin && (
+              <View className="absolute bottom-0 left-0 w-full bg-[#1c1d28] rounded-t-3xl border-t border-[#3b3e52] shadow-[0_-10px_40px_rgba(0,0,0,0.8)] pb-8 pt-6 px-6 pointer-events-auto animate-in slide-in-from-bottom duration-300 z-50">
+                {/* Top Row: Transport Modes */}
+                <View className="flex-row justify-between items-center mb-6 bg-[#2e3142] p-1.5 rounded-2xl border border-[#3b3e52]">
+                  <TouchableOpacity
+                    onPress={() => fetchRouteData(navTargetPin, "walking")}
+                    className={`flex-1 py-3 rounded-xl items-center flex-row justify-center ${
+                      navProfile === "walking" ? "bg-[#d3bc8e] shadow-md" : ""
+                    }`}
+                  >
+                    <Footprints
+                      size={20}
+                      color={navProfile === "walking" ? "#1c1d28" : "#9ca3af"}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => fetchRouteData(navTargetPin, "driving")}
+                    className={`flex-1 py-3 rounded-xl items-center flex-row justify-center ${
+                      navProfile === "driving" ? "bg-[#d3bc8e] shadow-md" : ""
+                    }`}
+                  >
+                    <Car
+                      size={20}
+                      color={navProfile === "driving" ? "#1c1d28" : "#9ca3af"}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => fetchRouteData(navTargetPin, "cycling")}
+                    className={`flex-1 py-3 rounded-xl items-center flex-row justify-center ${
+                      navProfile === "cycling" ? "bg-[#d3bc8e] shadow-md" : ""
+                    }`}
+                  >
+                    <Bike
+                      size={20}
+                      color={navProfile === "cycling" ? "#1c1d28" : "#9ca3af"}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Middle Row: ETA & Distance */}
+                <View className="flex-row items-end justify-between mb-6 px-2">
+                  <View>
+                    {isFetchingRoute ? (
+                      <ActivityIndicator color="#d3bc8e" size="small" />
+                    ) : (
+                      <>
+                        <Text className="text-4xl font-black text-white tracking-tight">
+                          {routeStats.duration > 60
+                            ? `${Math.floor(routeStats.duration / 60)} h ${
+                                routeStats.duration % 60
+                              } min`
+                            : `${routeStats.duration} min`}
+                        </Text>
+                        <Text className="text-gray-400 font-bold text-base mt-1">
+                          ({routeStats.distance} km) •{" "}
+                          {navProfile === "walking"
+                            ? "On Foot"
+                            : navProfile === "driving"
+                            ? "By Car"
+                            : "By Bike"}
+                        </Text>
+                      </>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    onPress={cancelNavigation}
+                    className="w-12 h-12 bg-[#2e3142] rounded-full items-center justify-center border border-[#3b3e52] active:bg-[#3b3e52]"
+                  >
+                    <X color="#9ca3af" size={24} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Bottom Row: Start Button */}
+                <TouchableOpacity
+                  onPress={startActiveNavigation}
+                  disabled={isFetchingRoute || routeStats.distance === 0}
+                  className={`w-full py-4 rounded-2xl flex-row items-center justify-center shadow-[0_0_20px_rgba(74,222,128,0.3)] active:scale-95 transition-transform ${
+                    isFetchingRoute ? "bg-gray-700" : "bg-[#4ade80]"
+                  }`}
+                >
+                  <Navigation
+                    color="#1c1d28"
+                    size={20}
+                    className="mr-2"
+                    style={{ transform: [{ rotate: "45deg" }] }}
+                  />
+                  <Text className="text-[#1c1d28] font-black text-xl uppercase tracking-wider">
+                    Start Route
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 2. THE ACTIVE HUD (Follow Mode) */}
+            {navState === "active" && navTargetPin && (
+              <View className="absolute top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-[#1c1d28]/95 backdrop-blur-md border-2 border-[#4ade80] rounded-2xl shadow-[0_0_30px_rgba(74,222,128,0.2)] p-4 pointer-events-auto flex-row items-center justify-between z-50 animate-in slide-in-from-top duration-300">
+                <View className="flex-row items-center flex-1">
+                  <View className="w-12 h-12 bg-[#4ade80]/20 rounded-full items-center justify-center mr-3 border border-[#4ade80]/50">
+                    <Navigation
+                      color="#4ade80"
+                      size={24}
+                      style={{ transform: [{ rotate: "45deg" }] }}
+                    />
+                  </View>
+                  <View className="flex-1 pr-2">
+                    <Text
+                      className="text-white font-black text-xl"
+                      numberOfLines={1}
+                    >
+                      To: {navTargetPin.name}
+                    </Text>
+                    <Text className="text-[#4ade80] font-bold text-xs uppercase tracking-widest">
+                      {routeStats.duration} min • {routeStats.distance} km
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={cancelNavigation}
+                  className="bg-red-500/20 p-3 rounded-xl border border-red-500/50 active:bg-red-500/40"
+                >
+                  <Text className="text-red-400 font-bold text-xs uppercase tracking-widest">
+                    End
                   </Text>
                 </TouchableOpacity>
               </View>

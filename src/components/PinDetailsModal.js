@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  useWindowDimensions, // 🌟 ADDED FOR RESPONSIVE TWO-COLUMN LAYOUT
 } from "react-native";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
@@ -62,7 +63,6 @@ const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
         <Text className="font-bold text-sm text-white">
           {comment.profiles?.username || "Traveler"}
         </Text>
-        {/* Optional: Add a star rating display here if your database supports it */}
       </View>
 
       {comment.image_urls && comment.image_urls.length > 0 && (
@@ -164,7 +164,6 @@ const fetchProductsFromSource = async (
   return Array.isArray(data) ? data : [data];
 };
 
-// 🌟 UPDATED MODAL COMPONENT (NOW TAKES onRequestAuth) 🌟
 export default function PinDetailsModal({
   pin,
   isOpen,
@@ -173,8 +172,10 @@ export default function PinDetailsModal({
   onGetDirections,
   onRequestAuth,
 }) {
-  const { addToCart } = useCart();
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === "web" && width >= 800; // 🌟 RESPONSIVE BREAKPOINT
 
+  const { addToCart } = useCart();
   const [currentView, setCurrentView] = useState("details");
   const [activeTab, setActiveTab] = useState("bookings");
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -281,7 +282,6 @@ export default function PinDetailsModal({
 
   const listToDisplay = activeTab === "bookings" ? bookings : physicalProducts;
 
-  // Compile images (Gallery + Main Image)
   const galleryImages =
     pin.gallery && Array.isArray(pin.gallery) ? pin.gallery : [];
   const allImages = pin.image_url
@@ -409,7 +409,7 @@ export default function PinDetailsModal({
       );
     }
 
-    // --- WINDOW 1: MAIN PIN DETAILS (Genshin Style) ---
+    // --- WINDOW 1: MAIN PIN DETAILS (Two-Column Responsive) ---
     return (
       <ScrollView
         className="flex-1 bg-[#1c1d28]"
@@ -417,227 +417,270 @@ export default function PinDetailsModal({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* 🌟 GALLERY HEADER 🌟 */}
-        {allImages.length > 0 && (
-          <View className="w-full h-72 bg-[#1c1d28] relative">
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              className="w-full h-full"
+        <View style={{ flexDirection: isDesktop ? "row" : "column" }}>
+          {/* =================== LEFT COLUMN / TOP =================== */}
+          <View
+            style={{
+              width: isDesktop ? "50%" : "100%",
+              borderRightWidth: isDesktop ? 1 : 0,
+              borderColor: "#3b3e52",
+            }}
+          >
+            {/* GALLERY HEADER */}
+            {allImages.length > 0 && (
+              <View
+                className={`w-full ${
+                  isDesktop ? "h-64" : "h-72"
+                } bg-[#1c1d28] relative`}
+              >
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  className="w-full h-full"
+                >
+                  {allImages.map((img, idx) => (
+                    <Image
+                      key={idx}
+                      source={{ uri: img }}
+                      style={{ width: isDesktop ? 425 : 400, height: "100%" }}
+                      resizeMode="cover"
+                    />
+                  ))}
+                </ScrollView>
+                <View className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#1c1d28] to-transparent pointer-events-none" />
+                {allImages.length > 1 && (
+                  <View className="absolute bottom-4 right-4 bg-black/60 px-3 py-1 rounded-full backdrop-blur-sm">
+                    <Text className="text-white text-xs font-bold tracking-widest">
+                      1 / {allImages.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            <View
+              className={`px-6 ${isDesktop ? "mt-4" : "-mt-4 relative z-10"}`}
             >
-              {allImages.map((img, idx) => (
-                <Image
-                  key={idx}
-                  source={{ uri: img }}
-                  style={{ width: 400, height: "100%" }}
-                  resizeMode="cover"
-                />
-              ))}
-            </ScrollView>
-            <View className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#1c1d28] to-transparent pointer-events-none" />
-            {allImages.length > 1 && (
-              <View className="absolute bottom-4 right-4 bg-black/60 px-3 py-1 rounded-full backdrop-blur-sm">
-                <Text className="text-white text-xs font-bold tracking-widest">
-                  1 / {allImages.length}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        <View className="px-6 -mt-4 relative z-10">
-          {/* Location Info Hub */}
-          <View className="flex-row flex-wrap gap-2 mb-6">
-            {pin.rating && (
-              <View className="flex-row items-center bg-[#2e3142] border border-[#d3bc8e]/50 px-3 py-1.5 rounded-full shadow-sm">
-                <Star size={14} color="#d3bc8e" fill="#d3bc8e" />
-                <Text className="text-white text-xs font-bold ml-1">
-                  {pin.rating}
-                </Text>
-              </View>
-            )}
-            <View className="flex-row items-center bg-[#2e3142] border border-[#3b3e52] px-3 py-1.5 rounded-full shadow-sm">
-              <MapPin size={14} color="#9ca3af" />
-              <Text className="text-gray-300 text-xs font-medium ml-1">
-                {pin.category || "Location"}
-              </Text>
-            </View>
-          </View>
-
-          {pin.description && (
-            <Text className="text-gray-300 text-base leading-7 mb-6 font-medium">
-              {stripHtml(pin.description)}
-            </Text>
-          )}
-
-          {/* 🌟 DIRECTORY INFO (Phone, Web, Hours) 🌟 */}
-          {(pin.phone || pin.website || pin.opening_hours) && (
-            <View className="bg-[#2e3142] rounded-2xl p-4 border border-[#3b3e52] mb-6 space-y-4 shadow-sm">
-              {pin.opening_hours && (
-                <View className="flex-row items-center">
-                  <Clock size={16} color="#d3bc8e" className="mr-3" />
-                  <Text className="text-gray-300 text-sm flex-1">
-                    {pin.opening_hours}
+              {/* Location Info Hub */}
+              <View className="flex-row flex-wrap gap-2 mb-6">
+                {pin.rating && (
+                  <View className="flex-row items-center bg-[#2e3142] border border-[#d3bc8e]/50 px-3 py-1.5 rounded-full shadow-sm">
+                    <Star size={14} color="#d3bc8e" fill="#d3bc8e" />
+                    <Text className="text-white text-xs font-bold ml-1">
+                      {pin.rating}
+                    </Text>
+                  </View>
+                )}
+                <View className="flex-row items-center bg-[#2e3142] border border-[#3b3e52] px-3 py-1.5 rounded-full shadow-sm">
+                  <MapPin size={14} color="#9ca3af" />
+                  <Text className="text-gray-300 text-xs font-medium ml-1">
+                    {pin.category || "Location"}
                   </Text>
                 </View>
-              )}
-              {pin.phone && (
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(`tel:${pin.phone}`)}
-                  className="flex-row items-center active:opacity-70"
-                >
-                  <Phone size={16} color="#d3bc8e" className="mr-3" />
-                  <Text className="text-white font-bold text-sm">
-                    {pin.phone}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              {pin.website && (
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(pin.website)}
-                  className="flex-row items-center active:opacity-70 mt-4"
-                >
-                  <Globe size={16} color="#d3bc8e" className="mr-3" />
-                  <Text className="text-cyan-400 font-bold text-sm">
-                    Visit Website
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
+              </View>
 
-          {/* 🌟 PRIMARY ACTION BUTTONS 🌟 */}
-          {(hasBookings || hasProducts || hasStory || session) && (
-            <View className="pt-2 pb-6 border-b border-[#3b3e52] space-y-3">
-              <TouchableOpacity
-                onPress={() => onGetDirections(pin)}
-                className="w-full h-14 bg-[#2e3142] border border-[#3b3e52] rounded-xl flex-row items-center justify-center shadow-lg active:bg-[#3b3e52]"
-              >
-                <MapPin size={20} color="#d3bc8e" className="mr-2" />
-                <Text className="text-white font-bold text-base">
-                  Track on Radar
+              {/* Mobile Only Description (Shows here on phones, moves to right col on Desktop) */}
+              {!isDesktop && pin.description && (
+                <Text className="text-gray-300 text-base leading-7 mb-6 font-medium">
+                  {stripHtml(pin.description)}
                 </Text>
-              </TouchableOpacity>
-
-              {(hasBookings || hasProducts) && (
-                <TouchableOpacity
-                  onPress={() => setCurrentView("hub")}
-                  className="w-full h-14 bg-[#e6ce9a] rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(230,206,154,0.3)] active:scale-95"
-                >
-                  <ShoppingBag size={20} color="#1c1d28" className="mr-2" />
-                  <Text className="text-[#1c1d28] font-black text-base uppercase tracking-wider">
-                    Guild Merchant
-                  </Text>
-                </TouchableOpacity>
               )}
 
-              {hasStory && (
-                <TouchableOpacity
-                  onPress={() => onReadStory(pin.story_id)}
-                  className="w-full h-14 bg-blue-600 rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.3)] active:bg-blue-700"
-                >
-                  <BookOpen size={20} color="white" className="mr-2" />
-                  <Text className="text-white font-bold text-base">
-                    Read Lore
-                  </Text>
-                </TouchableOpacity>
+              {/* DIRECTORY INFO */}
+              {(pin.phone || pin.website || pin.opening_hours) && (
+                <View className="bg-[#2e3142] rounded-2xl p-4 border border-[#3b3e52] mb-6 space-y-4 shadow-sm">
+                  {pin.opening_hours && (
+                    <View className="flex-row items-center">
+                      <Clock size={16} color="#d3bc8e" className="mr-3" />
+                      <Text className="text-gray-300 text-sm flex-1">
+                        {pin.opening_hours}
+                      </Text>
+                    </View>
+                  )}
+                  {pin.phone && (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(`tel:${pin.phone}`)}
+                      className="flex-row items-center active:opacity-70"
+                    >
+                      <Phone size={16} color="#d3bc8e" className="mr-3" />
+                      <Text className="text-white font-bold text-sm">
+                        {pin.phone}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {pin.website && (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(pin.website)}
+                      className="flex-row items-center active:opacity-70 mt-4"
+                    >
+                      <Globe size={16} color="#d3bc8e" className="mr-3" />
+                      <Text className="text-cyan-400 font-bold text-sm">
+                        Visit Website
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
 
-              {session && (
-                <View className="mt-2">
+              {/* PRIMARY ACTION BUTTONS */}
+              {(hasBookings || hasProducts || hasStory || session) && (
+                <View
+                  className={`pt-2 pb-6 border-[#3b3e52] space-y-3 ${
+                    !isDesktop ? "border-b" : ""
+                  }`}
+                >
                   <TouchableOpacity
-                    onPress={() => setPopoverOpen(!popoverOpen)}
-                    className="w-full h-14 bg-green-600/20 border border-green-500/50 rounded-xl flex-row items-center justify-center active:bg-green-600/30"
+                    onPress={() => onGetDirections(pin)}
+                    className="w-full h-14 bg-[#2e3142] border border-[#3b3e52] rounded-xl flex-row items-center justify-center shadow-lg active:bg-[#3b3e52]"
                   >
-                    <PlusCircle size={20} color="#4ade80" className="mr-2" />
-                    <Text className="text-green-400 font-bold text-base">
-                      Add to Route
+                    <MapPin size={20} color="#4ade80" className="mr-2" />
+                    <Text className="text-white font-bold text-base">
+                      Draw Route
                     </Text>
                   </TouchableOpacity>
-                  {popoverOpen && (
-                    <View className="mt-3 p-4 bg-[#2e3142] rounded-xl border border-[#3b3e52] shadow-xl">
-                      <AddToExperiencePopover
-                        pin={pin}
-                        closePopover={() => setPopoverOpen(false)}
-                      />
+
+                  {(hasBookings || hasProducts) && (
+                    <TouchableOpacity
+                      onPress={() => setCurrentView("hub")}
+                      className="w-full h-14 bg-[#e6ce9a] rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(230,206,154,0.3)] active:scale-95"
+                    >
+                      <ShoppingBag size={20} color="#1c1d28" className="mr-2" />
+                      <Text className="text-[#1c1d28] font-black text-base uppercase tracking-wider">
+                        Guild Merchant
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {hasStory && (
+                    <TouchableOpacity
+                      onPress={() => onReadStory(pin.story_id)}
+                      className="w-full h-14 bg-blue-600 rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.3)] active:bg-blue-700"
+                    >
+                      <BookOpen size={20} color="white" className="mr-2" />
+                      <Text className="text-white font-bold text-base">
+                        Read Lore
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {session && (
+                    <View className="mt-2">
+                      <TouchableOpacity
+                        onPress={() => setPopoverOpen(!popoverOpen)}
+                        className="w-full h-14 bg-green-600/20 border border-green-500/50 rounded-xl flex-row items-center justify-center active:bg-green-600/30"
+                      >
+                        <PlusCircle
+                          size={20}
+                          color="#4ade80"
+                          className="mr-2"
+                        />
+                        <Text className="text-green-400 font-bold text-base">
+                          Add to Route
+                        </Text>
+                      </TouchableOpacity>
+                      {popoverOpen && (
+                        <View className="mt-3 p-4 bg-[#2e3142] rounded-xl border border-[#3b3e52] shadow-xl">
+                          <AddToExperiencePopover
+                            pin={pin}
+                            closePopover={() => setPopoverOpen(false)}
+                          />
+                        </View>
+                      )}
                     </View>
                   )}
                 </View>
               )}
             </View>
-          )}
+          </View>
 
-          {/* 🌟 TRAVELER NOTES (COMMENTS) 🌟 */}
-          <View className="mt-6">
-            <Text className="text-xl font-black text-white mb-5 tracking-wide">
-              Traveler Notes
-            </Text>
-
-            {session ? (
-              <CommentForm
-                locationId={pin.id}
-                onCommentPosted={handlePostComment}
-              />
-            ) : (
-              <TouchableOpacity
-                onPress={onRequestAuth}
-                className="items-center justify-center py-8 bg-[#2e3142] rounded-2xl mb-4 border border-[#3b3e52] active:bg-[#3b3e52]"
-              >
-                <Lock size={24} color="#9ca3af" className="mb-3" />
-                <Text className="font-bold text-white mb-1">
-                  Guild Access Required
+          {/* =================== RIGHT COLUMN / BOTTOM =================== */}
+          <View
+            style={{ width: isDesktop ? "50%" : "100%" }}
+            className={`px-6 ${isDesktop ? "py-6" : "mt-6"}`}
+          >
+            {/* Desktop Only Description */}
+            {isDesktop && pin.description && (
+              <View className="mb-8">
+                <Text className="text-xl font-black text-white mb-3 tracking-wide">
+                  About
                 </Text>
-                <Text className="text-gray-400 text-sm">
-                  Sign in to leave a note or rate this location.
+                <Text className="text-gray-300 text-base leading-7 font-medium">
+                  {stripHtml(pin.description)}
                 </Text>
-              </TouchableOpacity>
-            )}
-
-            {loadingInitial ? (
-              <ActivityIndicator
-                color="#d3bc8e"
-                size="large"
-                className="mt-6"
-              />
-            ) : (
-              <View className="mt-2">
-                {comments.length > 0 ? (
-                  comments.map((comment) => (
-                    <Comment
-                      key={comment.id}
-                      comment={comment}
-                      session={session}
-                      onDelete={deleteComment}
-                      onVote={handleVote}
-                      onRequestAuth={onRequestAuth} // Required to trigger modal on vote if logged out
-                    />
-                  ))
-                ) : (
-                  <Text className="py-8 text-gray-500 text-center italic font-medium">
-                    No notes left by travelers yet. Be the first to chart this
-                    location!
-                  </Text>
-                )}
-                {hasMore && (
-                  <TouchableOpacity
-                    onPress={fetchMoreComments}
-                    className="w-full py-5 items-center active:opacity-70"
-                  >
-                    <Text className="text-[#d3bc8e] font-bold uppercase tracking-widest text-xs">
-                      Load Older Notes
-                    </Text>
-                  </TouchableOpacity>
-                )}
               </View>
             )}
+
+            {/* TRAVELER NOTES (COMMENTS) */}
+            <View>
+              <Text className="text-xl font-black text-white mb-5 tracking-wide">
+                Traveler Notes
+              </Text>
+
+              {session ? (
+                <CommentForm
+                  locationId={pin.id}
+                  onCommentPosted={handlePostComment}
+                />
+              ) : (
+                <TouchableOpacity
+                  onPress={onRequestAuth}
+                  className="items-center justify-center py-8 bg-[#2e3142] rounded-2xl mb-4 border border-[#3b3e52] active:bg-[#3b3e52]"
+                >
+                  <Lock size={24} color="#9ca3af" className="mb-3" />
+                  <Text className="font-bold text-white mb-1">
+                    Guild Access Required
+                  </Text>
+                  <Text className="text-gray-400 text-sm">
+                    Sign in to leave a note or rate this location.
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {loadingInitial ? (
+                <ActivityIndicator
+                  color="#d3bc8e"
+                  size="large"
+                  className="mt-6"
+                />
+              ) : (
+                <View className="mt-2">
+                  {comments.length > 0 ? (
+                    comments.map((comment) => (
+                      <Comment
+                        key={comment.id}
+                        comment={comment}
+                        session={session}
+                        onDelete={deleteComment}
+                        onVote={handleVote}
+                        onRequestAuth={onRequestAuth}
+                      />
+                    ))
+                  ) : (
+                    <Text className="py-8 text-gray-500 text-center italic font-medium">
+                      No notes left by travelers yet. Be the first to chart this
+                      location!
+                    </Text>
+                  )}
+                  {hasMore && (
+                    <TouchableOpacity
+                      onPress={fetchMoreComments}
+                      className="w-full py-5 items-center active:opacity-70"
+                    >
+                      <Text className="text-[#d3bc8e] font-bold uppercase tracking-widest text-xs">
+                        Load Older Notes
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
           </View>
         </View>
       </ScrollView>
     );
   };
 
-  // ... inside PinDetailsModal.js, right before the return statement:
   const handleBack = () => {
     if (currentView === "product") setCurrentView("hub");
     else setCurrentView("details");
@@ -658,7 +701,7 @@ export default function PinDetailsModal({
         <View
           className={`flex-1 bg-black/60 backdrop-blur-sm ${
             Platform.OS === "web"
-              ? "items-center justify-center"
+              ? "items-center justify-center p-4"
               : "justify-end"
           }`}
         >
@@ -667,7 +710,9 @@ export default function PinDetailsModal({
           {/* The Genshin-style Window */}
           <View
             className={`bg-[#1c1d28] flex-col overflow-hidden shadow-[0_-10px_50px_rgba(0,0,0,0.8)] ${
-              Platform.OS === "web"
+              isDesktop
+                ? "w-[850px] max-h-[85vh] rounded-2xl border border-[#3b3e52]"
+                : Platform.OS === "web"
                 ? "w-[450px] max-h-[85vh] rounded-2xl border border-[#3b3e52]"
                 : "h-[90%] w-full rounded-t-[40px] border-t-2 border-[#3b3e52]"
             }`}
