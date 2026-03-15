@@ -14,6 +14,9 @@ import ChatHub from "@/components/ChatHub";
 import RadarMap from "@/components/RadarMap"; // 🌟 IMPORTS RADAR MAP
 import AuthModal from "@/components/AuthModal";
 import ProfilePanel from "@/components/ProfilePanel";
+import CreatePinModal from "@/components/CreatePinModal"; // 🌟 NEW
+import { Audio } from "expo-av";
+import * as turf from "@turf/turf";
 import {
   MapPin,
   Search,
@@ -33,6 +36,7 @@ import {
   Footprints, // 🌟 ADD THIS (For walking)
   Bike, // 🌟 ADD THIS
   Navigation, // 🌟 ADD THIS
+  MapPinPlus, // 🌟 ADD THIS ICON
 } from "lucide-react-native";
 // 🌟 ADD THESE IMPORTS 🌟
 import {
@@ -170,74 +174,44 @@ export default function WebMapLogic() {
   const [activePartyMembers, setActivePartyMembers] = useState([]);
   const [partyLocations, setPartyLocations] = useState({});
   const multiplayerChannelRef = useRef(null);
-
+  // 🌟 DROP PIN MODE STATES 🌟
+  // 🌟 DROP PIN MODE STATES & FIXES 🌟
+  const [isDropPinMode, setIsDropPinMode] = useState(false);
   const [isCreatePinModalOpen, setCreatePinModalOpen] = useState(false);
-  const [isSubmittingPin, setIsSubmittingPin] = useState(false);
-  const [isCreatingNewList, setIsCreatingNewList] = useState(false);
-  const [newPinData, setNewPinData] = useState({
-    lat: null,
-    lng: null,
-    name: "",
-    category: "Favorites",
-    description: "",
-    image_url: "",
-  });
+  const [newPinCoords, setNewPinCoords] = useState(null);
 
-  const handleMapClick = (lng, lat) => {
-    if (session?.user) {
-      setNewPinData((prev) => ({ ...prev, lat, lng }));
-      setCreatePinModalOpen(true);
-      setIsCreatingNewList(false);
-    } else {
-      toast.info("Sign in to drop personal pins!");
-    }
-  };
+  // 1. STALE CLOSURE FIX: We use a ref so Mapbox always reads the freshest state
+  const isDropPinModeRef = useRef(isDropPinMode);
 
-  const handleCreatePin = async () => {
-    if (!newPinData.name) {
-      toast.error("Please name your location!");
-      return;
-    }
-    if (!newPinData.category) {
-      toast.error("Please provide a list name!");
-      return;
-    }
+  useEffect(() => {
+    isDropPinModeRef.current = isDropPinMode;
 
-    setIsSubmittingPin(true);
-    let targetTable = "personal_pins";
-    let insertPayload = { ...newPinData, user_id: session.user.id };
-
-    if (currentWorld.id !== "base") {
-      targetTable = "world_pins";
-      insertPayload = {
-        ...newPinData,
-        world_id: currentWorld.id,
-        added_by: session.user.id,
-      };
-      delete insertPayload.user_id;
-    }
-
-    const { error } = await supabase.from(targetTable).insert([insertPayload]);
-    setIsSubmittingPin(false);
-
-    if (error) {
-      toast.error("Failed to save location");
-    } else {
-      toast.success("Location secured!");
-      setCreatePinModalOpen(false);
-      setIsCreatingNewList(false);
-
-      if (currentWorld.id === "base") {
-        setDynamicPins((prev) => [...prev, insertPayload]);
+    // 2. CURSOR FIX: Change the mouse to a target crosshair on Web
+    if (Platform.OS === "web") {
+      // Mapbox uses a specific canvas container, we target it to change the cursor
+      const mapCanvas = document.querySelector(".mapboxgl-canvas-container");
+      if (mapCanvas) {
+        mapCanvas.style.cursor = isDropPinMode ? "crosshair" : "grab";
       }
-      setNewPinData({
-        lat: null,
-        lng: null,
-        name: "",
-        category: "Favorites",
-        description: "",
-        image_url: "",
-      });
+    }
+  }, [isDropPinMode]);
+
+  // 3. UPDATED CLICK HANDLER (Using the Ref)
+  const handleMapClick = (lng, lat) => {
+    // Read from the Ref, NOT the state, to bypass Mapbox's stale closure bug!
+    if (isDropPinModeRef.current) {
+      if (!session?.user) {
+        toast.info("Sign in to drop personal pins!");
+        setAuthModalOpen(true);
+        setIsDropPinMode(false); // Cancel mode if they need to log in
+        return;
+      }
+      setNewPinCoords({ lat, lng });
+      setCreatePinModalOpen(true);
+      setIsDropPinMode(false); // Turn off drop mode once they click!
+    } else {
+      // Normal map exploration behavior
+      setSelectedPin(null);
     }
   };
 
@@ -332,6 +306,84 @@ export default function WebMapLogic() {
   // 🌟 RADAR: PERSISTENT WALKED PATH LOGIC 🌟
   const [walkedPath, setWalkedPath] = useState([]);
   const [unsavedPoints, setUnsavedPoints] = useState(0);
+
+  // ==========================================
+  // 🌟 COMPANION AUDIO ENGINE (Paimon Whispers) 🌟
+  // ==========================================
+  const [sound, setSound] = useState();
+
+  // 1. THE ENTRY WHISPER
+  // You wanted it to play during loading and finish 1 second after.
+  // Since the loader is 4000ms, we trigger the audio at 2500ms!
+  useEffect(() => {
+    let entryTimeout;
+
+    const playEntryWhisper = async () => {
+      try {
+        // Required for iOS to play sound even if the ringer switch is silent
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+
+        // Load and play the specific welcome audio
+        const { sound: entrySound } = await Audio.Sound.createAsync(
+          require("../../public/sounds/welcome.mp3") // 🌟 UPDATE THIS PATH TO YOUR FILE
+        );
+        setSound(entrySound);
+        await entrySound.playAsync();
+      } catch (error) {
+        console.log(
+          "Autoplay blocked or audio missing. User must interact first."
+        );
+      }
+    };
+
+    // Queue the sound to play right before the loading screen drops
+    entryTimeout = setTimeout(() => {
+      playEntryWhisper();
+    }, 2500);
+
+    return () => clearTimeout(entryTimeout);
+  }, []);
+
+  // 2. THE IDLE BARKS (Random whispers every few minutes)
+  useEffect(() => {
+    if (!isAppReady) return; // Don't start the idle timer until the map is loaded
+
+    const idleWhisperTimer = setInterval(async () => {
+      try {
+        // Array of your recorded whispers
+        const whispers = [
+          require("../../public/sounds/whisper1.mp3"), // "I wonder what adventure..."
+          require("../../public/sounds/whisper2.mp3"), // "Look at that view..."
+          require("../../public/sounds/whisper3.mp3"), // "Should we check the radar?"
+        ];
+
+        // Pick a random audio file from the array
+        const randomWhisper =
+          whispers[Math.floor(Math.random() * whispers.length)];
+
+        const { sound: idleSound } = await Audio.Sound.createAsync(
+          randomWhisper
+        );
+        setSound(idleSound);
+        await idleSound.playAsync();
+      } catch (error) {
+        console.log("Could not play idle whisper");
+      }
+    }, 180000); // 🌟 180,000ms = 3 Minutes. Adjust this so it isn't too annoying!
+
+    return () => clearInterval(idleWhisperTimer);
+  }, [isAppReady]);
+
+  // 3. MEMORY CLEANUP
+  // Unload the audio from memory after it finishes so the app doesn't crash over time
+  useEffect(() => {
+    return sound
+      ? () => {
+          sound.unloadAsync();
+        }
+      : undefined;
+  }, [sound]);
+  // ==========================================
 
   // 1. Fetch saved path when the app loads
   // 1. Fetch saved path when the app loads
@@ -538,10 +590,21 @@ export default function WebMapLogic() {
     }
   };
 
+  // 🌟 SMART MAPBOX LOAD LISTENER 🌟
   useEffect(() => {
-    const readyTimer = setTimeout(() => setAppReady(true), 4000);
-    return () => clearTimeout(readyTimer);
-  }, []);
+    // We only want to lift the curtain IF Mapbox has successfully fired its 'onLoad' event
+    if (isMapLoaded) {
+      // Mapbox is ready! We add a tiny 1.5-second buffer here.
+      // Why? Because 'onLoad' fires when the base map is ready, but we want to give
+      // the GPU an extra second to render your custom 3D pins and Fog of War,
+      // AND we want to make sure your audio whisper has time to play smoothly.
+      const revealTimer = setTimeout(() => {
+        setAppReady(true);
+      }, 1500);
+
+      return () => clearTimeout(revealTimer);
+    }
+  }, [isMapLoaded]);
 
   useEffect(() => {
     if (!isAppReady || !mapRef.current) return;
@@ -578,31 +641,41 @@ export default function WebMapLogic() {
     }
   }, [isAppReady, selectedCity, viewedCities]);
 
-  // 🌟 SAFARI FULLSCREEN & THEME COLOR FIX 🌟
+  // 🌟 EDGE-TO-EDGE FULLSCREEN FIX (iOS & Android) 🌟
   useEffect(() => {
     if (Platform.OS === "web") {
-      // 1. Force the HTML body to match your dark theme
+      // 1. Force the HTML body to stretch and match the dark theme
       document.body.style.backgroundColor = "#1c1d28";
       document.body.style.margin = "0";
-      document.body.style.overflow = "hidden"; // Prevents the rubber-band bounce effect
+      document.body.style.overflow = "hidden"; // Prevents bounce
 
-      // 2. Inject the Meta Theme Color so the Safari Notch/Search Bar blends in
-      let metaThemeColor = document.querySelector("meta[name=theme-color]");
-      if (!metaThemeColor) {
-        metaThemeColor = document.createElement("meta");
-        metaThemeColor.name = "theme-color";
-        document.head.appendChild(metaThemeColor);
-      }
-      metaThemeColor.setAttribute("content", "#1c1d28");
+      const addMetaTag = (name, content) => {
+        let tag = document.querySelector(`meta[name="${name}"]`);
+        if (!tag) {
+          tag = document.createElement("meta");
+          tag.name = name;
+          document.head.appendChild(tag);
+        }
+        tag.setAttribute("content", content);
+      };
 
-      // 3. Inject Viewport Fit Cover (Fills the screen edge-to-edge)
-      let metaViewport = document.querySelector("meta[name=viewport]");
-      if (metaViewport) {
-        metaViewport.setAttribute(
-          "content",
-          "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-        );
-      }
+      // 2. Viewport-Fit=Cover: Tells the browser "Yes, please draw under the notch!"
+      addMetaTag(
+        "viewport",
+        "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      );
+
+      // 3. Android Chrome Theme Color (Colors the top status bar)
+      addMetaTag("theme-color", "#1c1d28");
+
+      // 4. iOS Magic: Hides Safari UI when launched from the Home Screen
+      addMetaTag("apple-mobile-web-app-capable", "yes");
+
+      // 5. iOS Magic: Forces the iPhone status bar (battery/clock) to be transparent so the map goes under it!
+      addMetaTag("apple-mobile-web-app-status-bar-style", "black-translucent");
+
+      // 6. Generic Mobile Web App Capable (For Android PWA)
+      addMetaTag("mobile-web-app-capable", "yes");
     }
   }, []);
 
@@ -661,18 +734,19 @@ export default function WebMapLogic() {
       setIs3D(!is3D);
     }
   };
-
   const fetchRouteData = async (pin, profile = "walking") => {
     if (!userLocation || !pin) return;
     setIsFetchingRoute(true);
     setNavProfile(profile);
 
     try {
+      // 🌟 UPDATED: Added your fallback token so this never fails!
       const MAPBOX_TOKEN =
         process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
-        process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-      const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${userLocation[0]},${userLocation[1]};${pin.lng},${pin.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+        process.env.NEXT_PUBLIC_MAPBOX_TOKEN ||
+        "pk.eyJ1IjoiaHlyb3N5IiwiYSI6ImNtZW84aHIyMzFjNXEybXNlZzN0c294N3oifQ.xSS6R2U0ClqqtR9Tfxmntw";
 
+      const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${userLocation[0]},${userLocation[1]};${pin.lng},${pin.lat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
       const response = await fetch(url);
       const data = await response.json();
 
@@ -743,6 +817,45 @@ export default function WebMapLogic() {
       });
     }
   };
+
+  // 🌟 6. TURF.JS AUTO-RECALCULATION ENGINE 🌟
+  useEffect(() => {
+    // Only run this IF we are actively navigating, we have a GPS signal, and we have a drawn route.
+    // We also pause it if 'isFetchingRoute' is true so we don't spam the API!
+    if (
+      navState !== "active" ||
+      !userLocation ||
+      !routeStats.geometry ||
+      isFetchingRoute
+    )
+      return;
+
+    try {
+      // 1. Create a Turf Point for the user's current GPS location
+      const currentPoint = turf.point([userLocation[0], userLocation[1]]);
+
+      // 2. Create a Turf LineString from the Mapbox route geometry
+      const routeLine = turf.feature(routeStats.geometry);
+
+      // 3. Calculate the distance from the player to the nearest edge of the line in METERS
+      const distanceToLine = turf.pointToLineDistance(currentPoint, routeLine, {
+        units: "meters",
+      });
+
+      // 4. THE THRESHOLD TRIGGER (30 Meters)
+      // If the player wanders more than 30 meters off the blue line, silently recalculate!
+      if (distanceToLine > 30) {
+        console.log(
+          `Player strayed ${Math.round(
+            distanceToLine
+          )}m off path! Recalculating...`
+        );
+        fetchRouteData(navTargetPin, navProfile);
+      }
+    } catch (error) {
+      console.log("Turf math error skipped.");
+    }
+  }, [userLocation, navState, routeStats.geometry, isFetchingRoute]);
 
   return (
     <View
@@ -951,84 +1064,90 @@ export default function WebMapLogic() {
               </View>
             )}
 
-            {/* 2. THE ACTIVE HUD (Follow Mode) */}
-            {navState === "active" && navTargetPin && (
-              <View className="absolute top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-[#1c1d28]/95 backdrop-blur-md border-2 border-[#4ade80] rounded-2xl shadow-[0_0_30px_rgba(74,222,128,0.2)] p-4 pointer-events-auto flex-row items-center justify-between z-50 animate-in slide-in-from-top duration-300">
-                <View className="flex-row items-center flex-1">
-                  <View className="w-12 h-12 bg-[#4ade80]/20 rounded-full items-center justify-center mr-3 border border-[#4ade80]/50">
-                    <Navigation
-                      color="#4ade80"
-                      size={24}
-                      style={{ transform: [{ rotate: "45deg" }] }}
-                    />
-                  </View>
-                  <View className="flex-1 pr-2">
-                    <Text
-                      className="text-white font-black text-xl"
-                      numberOfLines={1}
+            {/* TOP CENTER: SEARCH */}
+            {navState === "idle" && (
+              <View className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-xs sm:max-w-md px-4 pointer-events-auto hidden sm:flex">
+                <View className="bg-[#1c1d28]/90 border border-[#3b3e52] rounded-full flex-row items-center px-4 h-12 shadow-2xl">
+                  <Search size={18} color="#d3bc8e" />
+                  <TextInput
+                    placeholder={`Search ${
+                      selectedCity?.name || "locations"
+                    }...`}
+                    placeholderTextColor="#6b7280"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    className="flex-1 ml-3 text-white text-sm font-medium h-full outline-none"
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setSearchQuery("")}
+                      className="p-1"
                     >
-                      To: {navTargetPin.name}
-                    </Text>
-                    <Text className="text-[#4ade80] font-bold text-xs uppercase tracking-widest">
-                      {routeStats.duration} min • {routeStats.distance} km
-                    </Text>
-                  </View>
+                      <X size={16} color="#d3bc8e" />
+                    </TouchableOpacity>
+                  )}
                 </View>
-                <TouchableOpacity
-                  onPress={cancelNavigation}
-                  className="bg-red-500/20 p-3 rounded-xl border border-red-500/50 active:bg-red-500/40"
-                >
-                  <Text className="text-red-400 font-bold text-xs uppercase tracking-widest">
-                    End
-                  </Text>
-                </TouchableOpacity>
+                {searchResults.length > 0 && (
+                  <View className="mt-2 bg-[#2e3142]/95 border border-[#3b3e52] rounded-2xl overflow-hidden shadow-2xl">
+                    {searchResults.map((pin) => (
+                      <TouchableOpacity
+                        key={pin.id}
+                        onPress={() => handleMapSearchSelect(pin)}
+                        className="w-full p-4 border-b border-[#3b3e52] flex-row items-center active:bg-[#3b3e52]"
+                      >
+                        <View className="bg-[#1c1d28] border border-[#d3bc8e]/50 p-2 rounded-full mr-4">
+                          <MapPin size={16} color="#d3bc8e" />
+                        </View>
+                        <View>
+                          <Text className="text-white font-bold text-sm">
+                            {pin.name}
+                          </Text>
+                          <Text className="text-[#d3bc8e] text-[10px] font-bold uppercase tracking-wider mt-1">
+                            {pin.category}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 
-            {/* TOP CENTER: SEARCH */}
-            <View className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-xs sm:max-w-md px-4 pointer-events-auto hidden sm:flex">
-              <View className="bg-[#1c1d28]/90 border border-[#3b3e52] rounded-full flex-row items-center px-4 h-12 shadow-2xl">
-                <Search size={18} color="#d3bc8e" />
-                <TextInput
-                  placeholder={`Search ${selectedCity?.name || "locations"}...`}
-                  placeholderTextColor="#6b7280"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  className="flex-1 ml-3 text-white text-sm font-medium h-full outline-none"
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity
-                    onPress={() => setSearchQuery("")}
-                    className="p-1"
-                  >
-                    <X size={16} color="#d3bc8e" />
-                  </TouchableOpacity>
-                )}
-              </View>
-              {searchResults.length > 0 && (
-                <View className="mt-2 bg-[#2e3142]/95 border border-[#3b3e52] rounded-2xl overflow-hidden shadow-2xl">
-                  {searchResults.map((pin) => (
-                    <TouchableOpacity
-                      key={pin.id}
-                      onPress={() => handleMapSearchSelect(pin)}
-                      className="w-full p-4 border-b border-[#3b3e52] flex-row items-center active:bg-[#3b3e52]"
-                    >
-                      <View className="bg-[#1c1d28] border border-[#d3bc8e]/50 p-2 rounded-full mr-4">
-                        <MapPin size={16} color="#d3bc8e" />
-                      </View>
-                      <View>
-                        <Text className="text-white font-bold text-sm">
-                          {pin.name}
-                        </Text>
-                        <Text className="text-[#d3bc8e] text-[10px] font-bold uppercase tracking-wider mt-1">
-                          {pin.category}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
+            {/* 2. THE ACTIVE HUD (Follow Mode) */}
+            {/* 2. THE ACTIVE HUD (Follow Mode - Minimal Capsule) */}
+            {navState === "active" && navTargetPin && (
+              <View className="absolute bottom-28 left-1/2 -translate-x-1/2 bg-[#1c1d28]/95 backdrop-blur-md border border-[#4ade80]/50 rounded-full shadow-[0_0_20px_rgba(74,222,128,0.15)] p-1.5 pointer-events-auto flex-row items-center z-50 animate-in slide-in-from-bottom duration-300">
+                {/* Small Green Indicator Icon */}
+                <View className="w-10 h-10 bg-[#4ade80]/20 rounded-full items-center justify-center mr-3 border border-[#4ade80]/50">
+                  <Navigation
+                    color="#4ade80"
+                    size={16}
+                    style={{ transform: [{ rotate: "45deg" }] }}
+                  />
                 </View>
-              )}
-            </View>
+
+                {/* Compact Text Info */}
+                <View className="flex-col justify-center pr-4 max-w-[160px] sm:max-w-[200px]">
+                  <Text
+                    className="text-white font-bold text-sm leading-tight"
+                    numberOfLines={1}
+                  >
+                    {navTargetPin.name}
+                  </Text>
+                  <Text className="text-[#4ade80] font-bold text-[10px] uppercase tracking-widest mt-0.5">
+                    {routeStats.duration} min • {routeStats.distance} km
+                  </Text>
+                </View>
+
+                {/* Minimal End Route Button */}
+                <TouchableOpacity
+                  onPress={cancelNavigation}
+                  className="bg-red-500/20 w-10 h-10 rounded-full items-center justify-center border border-red-500/50 active:bg-red-500/40 ml-1 shadow-sm"
+                >
+                  <X color="#f87171" size={18} />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* TOP RIGHT: MINIMAP & TOOLS */}
             <View
@@ -1066,14 +1185,45 @@ export default function WebMapLogic() {
                 >
                   <MessageSquare color="#d3bc8e" size={20} />
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={handleGoToUserLocation}
                   className="bg-[#2e3142]/90 border border-[#3b3e52] rounded-full h-12 w-12 items-center justify-center shadow-lg active:scale-95"
                 >
                   <Crosshair color="#d3bc8e" size={20} />
                 </TouchableOpacity>
+
+                {/* 🌟 NEW: DROP PIN TOGGLE 🌟 */}
+                <TouchableOpacity
+                  onPress={() =>
+                    requireAuth(() => setIsDropPinMode(!isDropPinMode))
+                  }
+                  className={`bg-[#2e3142]/90 border ${
+                    isDropPinMode ? "border-[#4ade80]" : "border-[#3b3e52]"
+                  } rounded-full h-12 w-12 items-center justify-center shadow-lg active:scale-95`}
+                >
+                  <MapPinPlus
+                    color={isDropPinMode ? "#4ade80" : "#d3bc8e"}
+                    size={20}
+                  />
+                </TouchableOpacity>
               </View>
             </View>
+
+            {isDropPinMode && (
+              <View className="absolute top-24 left-1/2 -translate-x-1/2 bg-[#4ade80] px-6 py-3 rounded-full shadow-[0_0_30px_rgba(74,222,128,0.4)] flex-row items-center pointer-events-auto animate-in slide-in-from-top z-50">
+                <MapPin size={18} color="#1c1d28" className="mr-2" />
+                <Text className="text-[#1c1d28] font-black tracking-widest uppercase text-xs mr-4">
+                  Tap map to drop pin
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsDropPinMode(false)}
+                  className="bg-[#1c1d28]/20 p-1.5 rounded-full active:bg-[#1c1d28]/40"
+                >
+                  <X size={14} color="#1c1d28" />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* BOTTOM NAV */}
             <View
@@ -1143,144 +1293,19 @@ export default function WebMapLogic() {
         </View>
       )}
 
-      {/* CREATE PIN MODAL (FULLY NATIVE RN) */}
-      {isCreatePinModalOpen && (
-        <View className="absolute inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 pointer-events-auto">
-          <View className="bg-[#2e3142] border border-[#3b3e52] rounded-3xl p-6 w-full max-w-md shadow-2xl relative overflow-hidden">
-            <View className="flex-row justify-between items-center mb-6 mt-2">
-              <View>
-                <Text className="text-2xl font-black text-white flex-row items-center gap-2">
-                  <MapPin color="#d3bc8e" size={24} /> Drop Location
-                </Text>
-                <Text className="text-gray-400 text-xs font-mono mt-1">
-                  {newPinData.lat?.toFixed(5)}°, {newPinData.lng?.toFixed(5)}°
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setCreatePinModalOpen(false)}
-                className="p-2 bg-[#1c1d28] rounded-full border border-[#3b3e52]"
-              >
-                <X color="#9ca3af" size={20} />
-              </TouchableOpacity>
-            </View>
-
-            <View className="space-y-4 mb-8">
-              <View>
-                <Text className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider mb-2">
-                  Location Name
-                </Text>
-                <TextInput
-                  className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52]"
-                  placeholder="e.g., Secret Rooftop Cafe"
-                  placeholderTextColor="#6b7280"
-                  value={newPinData.name}
-                  onChangeText={(text) =>
-                    setNewPinData({ ...newPinData, name: text })
-                  }
-                />
-              </View>
-
-              <View>
-                <View className="flex-row justify-between items-end mb-2 mt-4">
-                  <Text className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider">
-                    List / Category
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setIsCreatingNewList(!isCreatingNewList);
-                      setNewPinData({
-                        ...newPinData,
-                        category: isCreatingNewList ? "Favorites" : "",
-                      });
-                    }}
-                  >
-                    <Text className="text-[#d3bc8e] text-[10px] font-bold uppercase tracking-wider bg-[#1c1d28] px-2 py-1 rounded-md border border-[#3b3e52]">
-                      {isCreatingNewList ? "Choose Existing" : "+ New List"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {isCreatingNewList ? (
-                  <TextInput
-                    className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52]"
-                    placeholder="e.g., Hidden Gems"
-                    placeholderTextColor="#6b7280"
-                    value={newPinData.category}
-                    onChangeText={(text) =>
-                      setNewPinData({ ...newPinData, category: text })
-                    }
-                  />
-                ) : (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    className="flex-row pb-2"
-                  >
-                    {existingLists.map((listName) => (
-                      <TouchableOpacity
-                        key={listName}
-                        onPress={() =>
-                          setNewPinData({ ...newPinData, category: listName })
-                        }
-                        className={`mr-2 px-4 py-3 rounded-xl border ${
-                          newPinData.category === listName
-                            ? "bg-[#d3bc8e] border-[#d3bc8e]"
-                            : "bg-[#1c1d28] border-[#3b3e52]"
-                        }`}
-                      >
-                        <Text
-                          className={
-                            newPinData.category === listName
-                              ? "text-[#1c1d28] font-bold"
-                              : "text-gray-400 font-medium"
-                          }
-                        >
-                          {listName}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
-
-              <View className="mt-2">
-                <Text className="text-[#d3bc8e] text-xs font-bold uppercase tracking-wider mb-2">
-                  Description / Notes
-                </Text>
-                <TextInput
-                  className="w-full bg-[#1c1d28] text-white px-4 py-4 rounded-xl border border-[#3b3e52]"
-                  placeholder="What makes this place special?"
-                  placeholderTextColor="#6b7280"
-                  multiline={true}
-                  numberOfLines={4}
-                  value={newPinData.description}
-                  onChangeText={(text) =>
-                    setNewPinData({ ...newPinData, description: text })
-                  }
-                  style={{ minHeight: 100, textAlignVertical: "top" }}
-                />
-              </View>
-            </View>
-
-            <TouchableOpacity
-              className="w-full bg-[#e6ce9a] py-4 rounded-xl flex-row justify-center items-center gap-2 shadow-[0_0_20px_rgba(230,206,154,0.3)]"
-              onPress={handleCreatePin}
-              disabled={isSubmittingPin}
-            >
-              {isSubmittingPin ? (
-                <View className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#1c1d28]" />
-              ) : (
-                <>
-                  <Check color="#1c1d28" size={20} />
-                  <Text className="text-[#1c1d28] font-bold text-lg">
-                    Save Location
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      <CreatePinModal
+        isOpen={isCreatePinModalOpen}
+        onClose={() => setCreatePinModalOpen(false)}
+        coordinates={newPinCoords}
+        session={session}
+        currentWorld={currentWorld}
+        existingLists={existingLists}
+        onSuccess={(newPin) => {
+          if (currentWorld.id === "base") {
+            setDynamicPins((prev) => [...prev, newPin]);
+          }
+        }}
+      />
 
       {/* EXTERNAL MODALS */}
       {isLocatorOpen && (

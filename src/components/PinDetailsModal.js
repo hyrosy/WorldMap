@@ -10,14 +10,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
-  useWindowDimensions, // 🌟 ADDED FOR RESPONSIVE TWO-COLUMN LAYOUT
+  useWindowDimensions,
 } from "react-native";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import useComments from "@/hooks/useComments";
 import { encode as base64Encode } from "base-64";
 
-// 🌟 NATIVE ICONS 🌟
 import {
   ArrowLeft,
   X,
@@ -35,14 +34,12 @@ import {
   Lock,
 } from "lucide-react-native";
 
-// Sub-components
 import ProductDetail from "./ProductDetail";
 import CommentForm from "./CommentForm";
 import AddToExperiencePopover from "./AddToExperiencePopover";
 
 const stripHtml = (html) => (html ? html.replace(/<[^>]*>?/gm, "").trim() : "");
 
-// --- SUB-COMPONENT FOR A SINGLE COMMENT (TRAVELER NOTE) ---
 const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
   const isOwner = session?.user?.id === comment.user_id;
   const { upvotes, downvotes, userVote } = comment;
@@ -50,10 +47,7 @@ const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
   const hasDownvoted = userVote === false;
 
   const handleVoteClick = (isUpvote) => {
-    if (!session) {
-      onRequestAuth();
-      return;
-    }
+    if (!session) return onRequestAuth();
     onVote(comment.id, isUpvote, userVote);
   };
 
@@ -65,7 +59,7 @@ const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
         </Text>
       </View>
 
-      {comment.image_urls && comment.image_urls.length > 0 && (
+      {!!comment.image_urls && comment.image_urls.length > 0 ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -80,7 +74,7 @@ const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
             />
           ))}
         </ScrollView>
-      )}
+      ) : null}
 
       <Text className="text-gray-300 text-sm mb-4 leading-5">
         {comment.content}
@@ -103,7 +97,6 @@ const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
               {upvotes}
             </Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             onPress={() => handleVoteClick(false)}
             className="flex-row items-center gap-1.5 active:scale-95"
@@ -123,15 +116,14 @@ const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
             </Text>
           </TouchableOpacity>
         </View>
-
-        {isOwner && (
+        {isOwner ? (
           <TouchableOpacity
             onPress={() => onDelete(comment.id)}
             className="p-2 -mr-2 active:scale-95"
           >
             <Trash2 size={16} color="#ef4444" />
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
     </View>
   );
@@ -173,7 +165,7 @@ export default function PinDetailsModal({
   onRequestAuth,
 }) {
   const { width } = useWindowDimensions();
-  const isDesktop = Platform.OS === "web" && width >= 800; // 🌟 RESPONSIVE BREAKPOINT
+  const isDesktop = Platform.OS === "web" && width >= 800;
 
   const { addToCart } = useCart();
   const [currentView, setCurrentView] = useState("details");
@@ -226,7 +218,6 @@ export default function PinDetailsModal({
 
   useEffect(() => {
     if (currentView !== "hub" || !pin) return;
-
     const fetchAllData = async () => {
       if (hasBookings && bookings.status === "idle") {
         setBookings({ status: "loading", data: [] });
@@ -247,7 +238,6 @@ export default function PinDetailsModal({
           setBookings({ status: "error", data: [] });
         }
       }
-
       if (hasProducts && physicalProducts.status === "idle") {
         setPhysicalProducts({ status: "loading", data: [] });
         try {
@@ -281,7 +271,6 @@ export default function PinDetailsModal({
   if (!pin) return null;
 
   const listToDisplay = activeTab === "bookings" ? bookings : physicalProducts;
-
   const galleryImages =
     pin.gallery && Array.isArray(pin.gallery) ? pin.gallery : [];
   const allImages = pin.image_url
@@ -289,7 +278,6 @@ export default function PinDetailsModal({
     : galleryImages;
 
   const renderContent = () => {
-    // --- WINDOW 3: PRODUCT DETAIL ---
     if (currentView === "product" && selectedProduct) {
       return (
         <ProductDetail
@@ -300,11 +288,10 @@ export default function PinDetailsModal({
       );
     }
 
-    // --- WINDOW 2: STORE/BOOKING HUB ---
     if (currentView === "hub") {
       return (
         <View className="flex-1 flex-col bg-[#1c1d28]">
-          {hasBookings && hasProducts && (
+          {hasBookings && hasProducts ? (
             <View className="flex-row border-b border-[#3b3e52] bg-[#2e3142]">
               <TouchableOpacity
                 onPress={() => setActiveTab("bookings")}
@@ -347,69 +334,69 @@ export default function PinDetailsModal({
                 </Text>
               </TouchableOpacity>
             </View>
-          )}
+          ) : null}
           <ScrollView
             className="flex-1 p-4"
             showsVerticalScrollIndicator={false}
           >
-            {listToDisplay.status === "loading" && (
+            {listToDisplay.status === "loading" ? (
               <ActivityIndicator
                 color="#d3bc8e"
                 size="large"
                 style={{ marginTop: 40 }}
               />
-            )}
-            {listToDisplay.status === "error" && (
+            ) : null}
+            {listToDisplay.status === "error" ? (
               <Text className="text-center text-red-400 mt-10 font-medium">
-                Could not load items from the Guild.
+                Could not load items.
               </Text>
-            )}
+            ) : null}
 
-            {listToDisplay.status === "success" && listToDisplay.data.length > 0
-              ? listToDisplay.data.map((product) => (
-                  <TouchableOpacity
-                    key={product.id}
-                    onPress={() => {
-                      setSelectedProduct(product);
-                      setCurrentView("product");
-                    }}
-                    className="flex-row items-center gap-4 p-3 bg-[#2e3142] rounded-xl mb-3 border border-[#3b3e52] active:scale-95 transition-transform"
-                  >
-                    <View className="relative w-20 h-20 flex-shrink-0 bg-[#1c1d28] rounded-lg overflow-hidden border border-[#3b3e52]">
-                      <Image
-                        source={{
-                          uri:
-                            product.images?.[0]?.src ||
-                            "https://placehold.co/100",
-                        }}
-                        className="w-full h-full"
-                        resizeMode="cover"
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <Text
-                        className="font-bold text-base text-white mb-1"
-                        numberOfLines={2}
-                      >
-                        {product.name}
-                      </Text>
-                      <Text className="text-[#d3bc8e] font-black text-sm">
-                        {stripHtml(product.price_html)}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              : listToDisplay.status === "success" && (
-                  <Text className="text-center text-gray-500 mt-10 italic">
-                    No items found.
-                  </Text>
-                )}
+            {listToDisplay.status === "success" &&
+            listToDisplay.data.length > 0 ? (
+              listToDisplay.data.map((product) => (
+                <TouchableOpacity
+                  key={product.id}
+                  onPress={() => {
+                    setSelectedProduct(product);
+                    setCurrentView("product");
+                  }}
+                  className="flex-row items-center gap-4 p-3 bg-[#2e3142] rounded-xl mb-3 border border-[#3b3e52] active:scale-95 transition-transform"
+                >
+                  <View className="relative w-20 h-20 flex-shrink-0 bg-[#1c1d28] rounded-lg overflow-hidden border border-[#3b3e52]">
+                    <Image
+                      source={{
+                        uri:
+                          product.images?.[0]?.src ||
+                          "https://placehold.co/100",
+                      }}
+                      className="w-full h-full"
+                      resizeMode="cover"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text
+                      className="font-bold text-base text-white mb-1"
+                      numberOfLines={2}
+                    >
+                      {product.name}
+                    </Text>
+                    <Text className="text-[#d3bc8e] font-black text-sm">
+                      {stripHtml(product.price_html)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            ) : listToDisplay.status === "success" ? (
+              <Text className="text-center text-gray-500 mt-10 italic">
+                No items found.
+              </Text>
+            ) : null}
           </ScrollView>
         </View>
       );
     }
 
-    // --- WINDOW 1: MAIN PIN DETAILS (Two-Column Responsive) ---
     return (
       <ScrollView
         className="flex-1 bg-[#1c1d28]"
@@ -418,7 +405,6 @@ export default function PinDetailsModal({
         keyboardShouldPersistTaps="handled"
       >
         <View style={{ flexDirection: isDesktop ? "row" : "column" }}>
-          {/* =================== LEFT COLUMN / TOP =================== */}
           <View
             style={{
               width: isDesktop ? "50%" : "100%",
@@ -426,8 +412,7 @@ export default function PinDetailsModal({
               borderColor: "#3b3e52",
             }}
           >
-            {/* GALLERY HEADER */}
-            {allImages.length > 0 && (
+            {allImages.length > 0 ? (
               <View
                 className={`w-full ${
                   isDesktop ? "h-64" : "h-72"
@@ -449,29 +434,28 @@ export default function PinDetailsModal({
                   ))}
                 </ScrollView>
                 <View className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#1c1d28] to-transparent pointer-events-none" />
-                {allImages.length > 1 && (
+                {allImages.length > 1 ? (
                   <View className="absolute bottom-4 right-4 bg-black/60 px-3 py-1 rounded-full backdrop-blur-sm">
                     <Text className="text-white text-xs font-bold tracking-widest">
                       1 / {allImages.length}
                     </Text>
                   </View>
-                )}
+                ) : null}
               </View>
-            )}
+            ) : null}
 
             <View
               className={`px-6 ${isDesktop ? "mt-4" : "-mt-4 relative z-10"}`}
             >
-              {/* Location Info Hub */}
               <View className="flex-row flex-wrap gap-2 mb-6">
-                {pin.rating && (
+                {!!pin.rating ? (
                   <View className="flex-row items-center bg-[#2e3142] border border-[#d3bc8e]/50 px-3 py-1.5 rounded-full shadow-sm">
                     <Star size={14} color="#d3bc8e" fill="#d3bc8e" />
                     <Text className="text-white text-xs font-bold ml-1">
                       {pin.rating}
                     </Text>
                   </View>
-                )}
+                ) : null}
                 <View className="flex-row items-center bg-[#2e3142] border border-[#3b3e52] px-3 py-1.5 rounded-full shadow-sm">
                   <MapPin size={14} color="#9ca3af" />
                   <Text className="text-gray-300 text-xs font-medium ml-1">
@@ -480,25 +464,23 @@ export default function PinDetailsModal({
                 </View>
               </View>
 
-              {/* Mobile Only Description (Shows here on phones, moves to right col on Desktop) */}
-              {!isDesktop && pin.description && (
+              {!isDesktop && !!pin.description ? (
                 <Text className="text-gray-300 text-base leading-7 mb-6 font-medium">
                   {stripHtml(pin.description)}
                 </Text>
-              )}
+              ) : null}
 
-              {/* DIRECTORY INFO */}
-              {(pin.phone || pin.website || pin.opening_hours) && (
+              {!!pin.phone || !!pin.website || !!pin.opening_hours ? (
                 <View className="bg-[#2e3142] rounded-2xl p-4 border border-[#3b3e52] mb-6 space-y-4 shadow-sm">
-                  {pin.opening_hours && (
+                  {!!pin.opening_hours ? (
                     <View className="flex-row items-center">
                       <Clock size={16} color="#d3bc8e" className="mr-3" />
                       <Text className="text-gray-300 text-sm flex-1">
                         {pin.opening_hours}
                       </Text>
                     </View>
-                  )}
-                  {pin.phone && (
+                  ) : null}
+                  {!!pin.phone ? (
                     <TouchableOpacity
                       onPress={() => Linking.openURL(`tel:${pin.phone}`)}
                       className="flex-row items-center active:opacity-70"
@@ -508,8 +490,8 @@ export default function PinDetailsModal({
                         {pin.phone}
                       </Text>
                     </TouchableOpacity>
-                  )}
-                  {pin.website && (
+                  ) : null}
+                  {!!pin.website ? (
                     <TouchableOpacity
                       onPress={() => Linking.openURL(pin.website)}
                       className="flex-row items-center active:opacity-70 mt-4"
@@ -519,12 +501,11 @@ export default function PinDetailsModal({
                         Visit Website
                       </Text>
                     </TouchableOpacity>
-                  )}
+                  ) : null}
                 </View>
-              )}
+              ) : null}
 
-              {/* PRIMARY ACTION BUTTONS */}
-              {(hasBookings || hasProducts || hasStory || session) && (
+              {hasBookings || hasProducts || hasStory || !!session ? (
                 <View
                   className={`pt-2 pb-6 border-[#3b3e52] space-y-3 ${
                     !isDesktop ? "border-b" : ""
@@ -540,7 +521,7 @@ export default function PinDetailsModal({
                     </Text>
                   </TouchableOpacity>
 
-                  {(hasBookings || hasProducts) && (
+                  {hasBookings || hasProducts ? (
                     <TouchableOpacity
                       onPress={() => setCurrentView("hub")}
                       className="w-full h-14 bg-[#e6ce9a] rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(230,206,154,0.3)] active:scale-95"
@@ -550,9 +531,9 @@ export default function PinDetailsModal({
                         Guild Merchant
                       </Text>
                     </TouchableOpacity>
-                  )}
+                  ) : null}
 
-                  {hasStory && (
+                  {hasStory ? (
                     <TouchableOpacity
                       onPress={() => onReadStory(pin.story_id)}
                       className="w-full h-14 bg-blue-600 rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.3)] active:bg-blue-700"
@@ -562,9 +543,9 @@ export default function PinDetailsModal({
                         Read Lore
                       </Text>
                     </TouchableOpacity>
-                  )}
+                  ) : null}
 
-                  {session && (
+                  {!!session ? (
                     <View className="mt-2">
                       <TouchableOpacity
                         onPress={() => setPopoverOpen(!popoverOpen)}
@@ -579,28 +560,26 @@ export default function PinDetailsModal({
                           Add to Route
                         </Text>
                       </TouchableOpacity>
-                      {popoverOpen && (
+                      {popoverOpen ? (
                         <View className="mt-3 p-4 bg-[#2e3142] rounded-xl border border-[#3b3e52] shadow-xl">
                           <AddToExperiencePopover
                             pin={pin}
                             closePopover={() => setPopoverOpen(false)}
                           />
                         </View>
-                      )}
+                      ) : null}
                     </View>
-                  )}
+                  ) : null}
                 </View>
-              )}
+              ) : null}
             </View>
           </View>
 
-          {/* =================== RIGHT COLUMN / BOTTOM =================== */}
           <View
             style={{ width: isDesktop ? "50%" : "100%" }}
             className={`px-6 ${isDesktop ? "py-6" : "mt-6"}`}
           >
-            {/* Desktop Only Description */}
-            {isDesktop && pin.description && (
+            {isDesktop && !!pin.description ? (
               <View className="mb-8">
                 <Text className="text-xl font-black text-white mb-3 tracking-wide">
                   About
@@ -609,15 +588,13 @@ export default function PinDetailsModal({
                   {stripHtml(pin.description)}
                 </Text>
               </View>
-            )}
+            ) : null}
 
-            {/* TRAVELER NOTES (COMMENTS) */}
             <View>
               <Text className="text-xl font-black text-white mb-5 tracking-wide">
                 Traveler Notes
               </Text>
-
-              {session ? (
+              {!!session ? (
                 <CommentForm
                   locationId={pin.id}
                   onCommentPosted={handlePostComment}
@@ -662,7 +639,7 @@ export default function PinDetailsModal({
                       location!
                     </Text>
                   )}
-                  {hasMore && (
+                  {hasMore ? (
                     <TouchableOpacity
                       onPress={fetchMoreComments}
                       className="w-full py-5 items-center active:opacity-70"
@@ -671,7 +648,7 @@ export default function PinDetailsModal({
                         Load Older Notes
                       </Text>
                     </TouchableOpacity>
-                  )}
+                  ) : null}
                 </View>
               )}
             </View>
@@ -697,7 +674,6 @@ export default function PinDetailsModal({
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
       >
-        {/* 🌟 DYNAMIC WRAPPER: Centered on Web, Bottom on Mobile 🌟 */}
         <View
           className={`flex-1 bg-black/60 backdrop-blur-sm ${
             Platform.OS === "web"
@@ -706,8 +682,6 @@ export default function PinDetailsModal({
           }`}
         >
           <TouchableOpacity className="absolute inset-0" onPress={onClose} />
-
-          {/* The Genshin-style Window */}
           <View
             className={`bg-[#1c1d28] flex-col overflow-hidden shadow-[0_-10px_50px_rgba(0,0,0,0.8)] ${
               isDesktop
@@ -717,7 +691,6 @@ export default function PinDetailsModal({
                 : "h-[90%] w-full rounded-t-[40px] border-t-2 border-[#3b3e52]"
             }`}
           >
-            {/* Header Bar */}
             <View className="px-6 py-5 border-b border-[#3b3e52] flex-row justify-between items-center bg-[#2e3142] z-10">
               {currentView !== "details" ? (
                 <TouchableOpacity
@@ -729,7 +702,6 @@ export default function PinDetailsModal({
               ) : (
                 <View style={{ width: 36 }} />
               )}
-
               <Text
                 className="text-xl font-black text-white flex-1 text-center tracking-tight"
                 numberOfLines={1}
@@ -738,7 +710,6 @@ export default function PinDetailsModal({
                   ? selectedProduct.name
                   : pin.name}
               </Text>
-
               <TouchableOpacity
                 onPress={onClose}
                 className="p-2 -mr-2 bg-[#1c1d28] rounded-full border border-[#3b3e52] active:scale-95"
@@ -746,7 +717,6 @@ export default function PinDetailsModal({
                 <X size={18} color="#9ca3af" />
               </TouchableOpacity>
             </View>
-
             <View className="flex-1 bg-[#1c1d28]">{renderContent()}</View>
           </View>
         </View>

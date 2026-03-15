@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import mbxDirections from "@mapbox/mapbox-sdk/services/directions";
-import * as turf from "@turf/turf"; // 🌟 THE NEW FOG OF WAR ENGINE 🌟
+import * as turf from "@turf/turf";
 
 mapboxgl.accessToken =
   process.env.NEXT_PUBLIC_MAPBOX_TOKEN ||
@@ -31,29 +31,23 @@ const Map = ({
   const map = useRef(null);
   const userMarkerRef = useRef(null);
   const partyMarkersRef = useRef({});
-
-  // 🌟 FOG OF WAR: TRACKS WHERE YOU HAVE WALKED 🌟
   const [walkedPath, setWalkedPath] = useState([]);
-
   const pinsRef = useRef(displayedPins);
+
   useEffect(() => {
     pinsRef.current = displayedPins;
   }, [displayedPins]);
 
-  // 1. Initialize Map, Load Icons, & Render The Fog
   // 1. Initialize Map & Load Custom Images into Canvas
   useEffect(() => {
     if (map.current) return;
 
-    // 🌟 DYNAMIC DAY/NIGHT CYCLE 🌟
-    // 🌟 DYNAMIC DAY/NIGHT CYCLE 🌟
     const currentHour = new Date().getHours();
     const isNight = currentHour >= 19 || currentHour <= 6;
 
-    // Changed styles to avoid premium traffic API (Fixes the 404 Incidents error)
     const dynamicStyle = isNight
       ? "mapbox://styles/mapbox/dark-v11"
-      : "mapbox://styles/mapbox/outdoors-v12"; // Outdoors looks amazing for exploration
+      : "mapbox://styles/mapbox/outdoors-v12";
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
@@ -132,8 +126,6 @@ const Map = ({
   // 🌟 FOG OF WAR: UPDATE WALKED PATH FROM GPS 🌟
   useEffect(() => {
     if (!userLocation) return;
-
-    // Add current GPS to our trail, ignoring if we haven't moved to save memory
     setWalkedPath((prev) => {
       const last = prev[prev.length - 1];
       if (last && last[0] === userLocation[0] && last[1] === userLocation[1])
@@ -152,11 +144,9 @@ const Map = ({
     )
       return;
 
-    // 1. The world bounding box
     const worldBox = turf.bboxPolygon([-180, -85, 180, 85]);
     let exploredArea;
 
-    // 2. Buffer the GPS trail by 50 meters (this is your 'vision radius')
     if (walkedPath.length === 1) {
       exploredArea = turf.buffer(turf.point(walkedPath[0]), 50, {
         units: "meters",
@@ -167,7 +157,6 @@ const Map = ({
       });
     }
 
-    // 3. Cut the buffered trail out of the world box
     try {
       const fogMask = turf.difference(worldBox, exploredArea);
       currentMap.getSource("fog-source").setData(fogMask || worldBox);
@@ -364,6 +353,80 @@ const Map = ({
     manageRoute();
   }, [experienceRoute]);
 
+  // 🌟 7. AAA NAVIGATION ROUTE LINE (BULLETPROOF FIX) 🌟
+  // 🌟 7. AAA NAVIGATION ROUTE LINE (STRICT GEOJSON FIX) 🌟
+  useEffect(() => {
+    const currentMap = map.current;
+    if (!currentMap) return;
+
+    const manageNavRoute = () => {
+      if (!currentMap.isStyleLoaded()) return;
+
+      const sourceId = "active-navigation-route";
+
+      if (!currentMap.getSource(sourceId)) {
+        // Initialize strictly as a FeatureCollection
+        currentMap.addSource(sourceId, {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+
+        currentMap.addLayer({
+          id: "route-line-casing",
+          type: "line",
+          source: sourceId,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#1c1d28",
+            "line-width": 10,
+            "line-opacity": 0.6,
+          },
+        });
+
+        currentMap.addLayer({
+          id: "route-line-core",
+          type: "line",
+          source: sourceId,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#4ade80",
+            "line-width": 5,
+            "line-opacity": 1,
+          },
+        });
+      }
+
+      const source = currentMap.getSource(sourceId);
+
+      if (directionsRoute && directionsRoute.coordinates) {
+        console.log(
+          `🟢 Map.js received route! Drawing line with ${directionsRoute.coordinates.length} coordinates.`
+        );
+
+        // 🌟 STRICT FEATURE COLLECTION FORMAT 🌟
+        // Mapbox silently fails if you don't wrap the LineString exactly like this!
+        source.setData({
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: {},
+              geometry: directionsRoute, // This is the actual LineString
+            },
+          ],
+        });
+      } else {
+        source.setData({ type: "FeatureCollection", features: [] });
+      }
+    };
+
+    if (currentMap.isStyleLoaded()) {
+      manageNavRoute();
+    } else {
+      currentMap.once("styledata", manageNavRoute);
+    }
+  }, [directionsRoute]);
+
   // 5. Render User GPS Marker
   useEffect(() => {
     if (!map.current || !userLocation) return;
@@ -379,7 +442,7 @@ const Map = ({
     }
   }, [userLocation]);
 
-  // 🌟 6. RENDER PARTY MEMBER GPS MARKERS 🌟
+  // 6. RENDER PARTY MEMBER GPS MARKERS
   useEffect(() => {
     if (!map.current) return;
 
