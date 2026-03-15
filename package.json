@@ -10,9 +10,7 @@
     "web": "expo start --web",
     "reset": "npx expo start --clear",
     "build": "expo export"
-
   },
-  
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^13.0.0",
     "@mapbox/mapbox-sdk": "^0.16.1",
