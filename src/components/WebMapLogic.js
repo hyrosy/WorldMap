@@ -15,6 +15,8 @@ import RadarMap from "@/components/RadarMap"; // 🌟 IMPORTS RADAR MAP
 import AuthModal from "@/components/AuthModal";
 import ProfilePanel from "@/components/ProfilePanel";
 import CreatePinModal from "@/components/CreatePinModal"; // 🌟 NEW
+import GuildMerchantPanel from "@/components/GuildMerchantPanel"; // 🌟 NEW
+import TravelerBackpack from "@/components/TravelerBackpack"; // 🌟 NEW
 import { Audio } from "expo-av";
 import * as turf from "@turf/turf";
 import {
@@ -36,7 +38,9 @@ import {
   Footprints, // 🌟 ADD THIS (For walking)
   Bike, // 🌟 ADD THIS
   Navigation, // 🌟 ADD THIS
+  ShoppingBag, // 🌟 ADD THIS
   MapPinPlus, // 🌟 ADD THIS ICON
+  Backpack,
 } from "lucide-react-native";
 // 🌟 ADD THESE IMPORTS 🌟
 import {
@@ -145,6 +149,7 @@ export default function WebMapLogic() {
   // 🌟 NEW GENSHIN-STYLE OVERLAY STATES 🌟
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAuthModalOpen, setAuthModalOpen] = useState(false);
+  const [isMerchantOpen, setIsMerchantOpen] = useState(false);
 
   // Helper to trigger Auth if not logged in
   const requireAuth = (action) => {
@@ -168,8 +173,11 @@ export default function WebMapLogic() {
   const [storyContentUrl, setStoryContentUrl] = useState("");
   const [viewedCities, setViewedCities] = useState(new Set());
   const mapRef = useRef(null);
-  const { addToCart } = useCart();
+  const { addToCart, cart, cartItems } = useCart();
+  const currentCartItems = cart || cartItems || []; // Safe fallback
 
+  // 🌟 BACKPACK STATE 🌟
+  const [isBackpackOpen, setIsBackpackOpen] = useState(false);
   // MULTIPLAYER STATES (GTA LOBBY & RADAR)
   const [activePartyMembers, setActivePartyMembers] = useState([]);
   const [partyLocations, setPartyLocations] = useState({});
@@ -1207,6 +1215,31 @@ export default function WebMapLogic() {
                     size={20}
                   />
                 </TouchableOpacity>
+
+                {/* 🌟 NEW: GUILD MERCHANT STORE BUTTON 🌟 */}
+                <TouchableOpacity
+                  onPress={() => setIsMerchantOpen(true)}
+                  className="bg-[#d3bc8e] border border-[#e6ce9a] rounded-full h-12 w-12 items-center justify-center shadow-[0_0_20px_rgba(211,188,142,0.4)] active:scale-95 mt-2"
+                >
+                  <ShoppingBag color="#1c1d28" size={20} />
+                </TouchableOpacity>
+
+                {/* 🌟 TRAVELER BACKPACK BUTTON 🌟 */}
+                <TouchableOpacity
+                  onPress={() => setIsBackpackOpen(true)}
+                  className="relative bg-[#2e3142]/90 border border-[#3b3e52] rounded-full h-12 w-12 items-center justify-center shadow-lg active:scale-95 mt-2"
+                >
+                  <Backpack color="#4ade80" size={20} />
+
+                  {/* The glowing red notification dot if items are in the bag! */}
+                  {currentCartItems.length > 0 && (
+                    <View className="absolute -top-1 -right-1 bg-red-500 border-2 border-[#1c1d28] w-5 h-5 rounded-full items-center justify-center shadow-md">
+                      <Text className="text-white text-[10px] font-black">
+                        {currentCartItems.length}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -1341,6 +1374,16 @@ export default function WebMapLogic() {
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setAuthModalOpen(false)}
+      />
+
+      <GuildMerchantPanel
+        isOpen={isMerchantOpen}
+        onClose={() => setIsMerchantOpen(false)}
+      />
+
+      <TravelerBackpack
+        isOpen={isBackpackOpen}
+        onClose={() => setIsBackpackOpen(false)}
       />
 
       <QuestPanel
