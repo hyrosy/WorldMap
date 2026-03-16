@@ -15,7 +15,8 @@ import {
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import useComments from "@/hooks/useComments";
-import { encode as base64Encode } from "base-64";
+import { supabase } from "@/lib/supabaseClient"; // 🌟 IMPORT SUPABASE
+import { toast } from "sonner";
 
 import {
   ArrowLeft,
@@ -34,11 +35,34 @@ import {
   Lock,
 } from "lucide-react-native";
 
-import ProductDetail from "./ProductDetail";
 import CommentForm from "./CommentForm";
 import AddToExperiencePopover from "./AddToExperiencePopover";
 
 const stripHtml = (html) => (html ? html.replace(/<[^>]*>?/gm, "").trim() : "");
+
+// 🌟 RPG RARITY COLORS 🌟
+const RARITY_COLORS = {
+  common: {
+    border: "border-gray-500",
+    bg: "bg-gray-500/10",
+    text: "text-gray-400",
+  },
+  rare: {
+    border: "border-blue-500",
+    bg: "bg-blue-500/10",
+    text: "text-blue-400",
+  },
+  epic: {
+    border: "border-purple-500",
+    bg: "bg-purple-500/10",
+    text: "text-purple-400",
+  },
+  legendary: {
+    border: "border-[#d3bc8e]",
+    bg: "bg-[#d3bc8e]/10",
+    text: "text-[#d3bc8e]",
+  },
+};
 
 const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
   const isOwner = session?.user?.id === comment.user_id;
@@ -129,33 +153,6 @@ const Comment = ({ comment, session, onDelete, onVote, onRequestAuth }) => {
   );
 };
 
-const BOOKINGS_API_URL = "https://data.hyrosy.com";
-const PRODUCTS_API_URL = "https://www.hyrosy.com";
-
-const fetchProductsFromSource = async (
-  baseUrl,
-  key,
-  secret,
-  { productId, categoryId }
-) => {
-  let url = "";
-  if (productId) url = `${baseUrl}/wp-json/wc/v3/products/${productId}`;
-  else if (categoryId)
-    url = `${baseUrl}/wp-json/wc/v3/products?category=${categoryId}`;
-  else return [];
-
-  const authString = base64Encode(`${key}:${secret}`);
-  const response = await fetch(url, {
-    headers: { Authorization: `Basic ${authString}` },
-  });
-  if (!response.ok)
-    throw new Error(
-      `Failed to fetch from ${baseUrl}. Status: ${response.status}`
-    );
-  const data = await response.json();
-  return Array.isArray(data) ? data : [data];
-};
-
 export default function PinDetailsModal({
   pin,
   isOpen,
@@ -169,13 +166,10 @@ export default function PinDetailsModal({
 
   const { addToCart } = useCart();
   const [currentView, setCurrentView] = useState("details");
-  const [activeTab, setActiveTab] = useState("bookings");
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [bookings, setBookings] = useState({ status: "idle", data: [] });
-  const [physicalProducts, setPhysicalProducts] = useState({
-    status: "idle",
-    data: [],
-  });
+
+  // 🌟 SUPABASE NATIVE STORE STATE 🌟
+  const [pinItems, setPinItems] = useState({ status: "idle", data: [] });
 
   const { session } = useAuth();
   const {
@@ -199,197 +193,189 @@ export default function PinDetailsModal({
     });
   };
 
-  const hasBookings = !!(pin?.bookable_product_id || pin?.bookable_category_id);
-  const hasProducts = !!(pin?.connector_id || pin?.category_connector_id);
-  const hasStory = !!pin?.story_id;
-
+  // 🌟 FETCH ITEMS FOR THIS SPECIFIC PIN 🌟
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && pin?.id) {
       setCurrentView("details");
       setSelectedProduct(null);
-      setBookings({ status: "idle", data: [] });
-      setPhysicalProducts({ status: "idle", data: [] });
+      setPinItems({ status: "loading", data: [] });
       setPopoverOpen(false);
 
-      if (hasBookings) setActiveTab("bookings");
-      else if (hasProducts) setActiveTab("products");
-    }
-  }, [isOpen, pin, hasBookings, hasProducts]);
+      const fetchLocalItems = async () => {
+        const { data, error } = await supabase
+          .from("merchant_items")
+          .select("*")
+          .eq("pin_id", pin.id)
+          .order("created_at", { ascending: false });
 
-  useEffect(() => {
-    if (currentView !== "hub" || !pin) return;
-    const fetchAllData = async () => {
-      if (hasBookings && bookings.status === "idle") {
-        setBookings({ status: "loading", data: [] });
-        try {
-          const bookingData = await fetchProductsFromSource(
-            BOOKINGS_API_URL,
-            process.env.EXPO_PUBLIC_DATA_WOOCOMMERCE_KEY ||
-              process.env.NEXT_PUBLIC_DATA_WOOCOMMERCE_KEY,
-            process.env.EXPO_PUBLIC_DATA_WOOCOMMERCE_SECRET ||
-              process.env.NEXT_PUBLIC_DATA_WOOCOMMERCE_SECRET,
-            {
-              productId: pin.bookable_product_id,
-              categoryId: pin.bookable_category_id,
-            }
-          );
-          setBookings({ status: "success", data: bookingData });
-        } catch (error) {
-          setBookings({ status: "error", data: [] });
+        if (error) {
+          setPinItems({ status: "error", data: [] });
+        } else {
+          setPinItems({ status: "success", data: data || [] });
         }
-      }
-      if (hasProducts && physicalProducts.status === "idle") {
-        setPhysicalProducts({ status: "loading", data: [] });
-        try {
-          const productData = await fetchProductsFromSource(
-            PRODUCTS_API_URL,
-            process.env.EXPO_PUBLIC_WOOCOMMERCE_KEY ||
-              process.env.NEXT_PUBLIC_WOOCOMMERCE_KEY,
-            process.env.EXPO_PUBLIC_WOOCOMMERCE_SECRET ||
-              process.env.NEXT_PUBLIC_WOOCOMMERCE_SECRET,
-            {
-              productId: pin.connector_id,
-              categoryId: pin.category_connector_id,
-            }
-          );
-          setPhysicalProducts({ status: "success", data: productData });
-        } catch (error) {
-          setPhysicalProducts({ status: "error", data: [] });
-        }
-      }
-    };
-    fetchAllData();
-  }, [
-    currentView,
-    pin,
-    hasBookings,
-    hasProducts,
-    bookings.status,
-    physicalProducts.status,
-  ]);
+      };
+
+      fetchLocalItems();
+    }
+  }, [isOpen, pin]);
 
   if (!pin) return null;
 
-  const listToDisplay = activeTab === "bookings" ? bookings : physicalProducts;
   const galleryImages =
     pin.gallery && Array.isArray(pin.gallery) ? pin.gallery : [];
   const allImages = pin.image_url
     ? [pin.image_url, ...galleryImages]
     : galleryImages;
 
+  const handlePurchase = (item) => {
+    addToCart(item);
+    toast.success(`${item.name} added to your backpack!`);
+    setCurrentView("hub");
+  };
+
   const renderContent = () => {
+    // --- 🌟 NATIVE PRODUCT DETAIL VIEW 🌟 ---
     if (currentView === "product" && selectedProduct) {
+      const rarityTheme =
+        RARITY_COLORS[selectedProduct.rarity] || RARITY_COLORS.common;
       return (
-        <ProductDetail
-          product={selectedProduct}
-          onAddToCart={addToCart}
-          onBack={() => setCurrentView("hub")}
-        />
+        <ScrollView
+          className="flex-1 bg-[#1c1d28]"
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="relative w-full h-64 bg-[#2e3142] border-b-2 border-[#3b3e52]">
+            <Image
+              source={{
+                uri: selectedProduct.image_url || "https://placehold.co/400",
+              }}
+              className="w-full h-full"
+              resizeMode="cover"
+            />
+            <View className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded-full border border-gray-600 backdrop-blur-md">
+              <Text
+                className={`${rarityTheme.text} font-black text-xs uppercase tracking-widest`}
+              >
+                {selectedProduct.rarity}
+              </Text>
+            </View>
+          </View>
+          <View className="p-6">
+            <Text className="text-2xl font-black text-white mb-2">
+              {selectedProduct.name}
+            </Text>
+            <Text className="text-gray-300 leading-6 mb-6">
+              {selectedProduct.description}
+            </Text>
+            <View className="flex-row items-center justify-between bg-[#2e3142] p-4 rounded-xl border border-[#3b3e52] mb-6">
+              <View>
+                <Text className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">
+                  Price
+                </Text>
+                <Text className="text-[#d3bc8e] font-black text-xl">
+                  {selectedProduct.price} {selectedProduct.currency}
+                </Text>
+              </View>
+              <View className="items-end">
+                <Text className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">
+                  Stock
+                </Text>
+                <Text className="text-white font-bold">
+                  {selectedProduct.stock === -1
+                    ? "Unlimited"
+                    : selectedProduct.stock}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => handlePurchase(selectedProduct)}
+              className={`w-full py-4 rounded-xl flex-row justify-center items-center gap-2 ${rarityTheme.bg} border ${rarityTheme.border} active:scale-95`}
+            >
+              <ShoppingBag
+                color={
+                  selectedProduct.rarity === "legendary" ? "#d3bc8e" : "white"
+                }
+                size={20}
+              />
+              <Text
+                className={`${
+                  selectedProduct.rarity === "legendary"
+                    ? "text-[#d3bc8e]"
+                    : "text-white"
+                } font-black text-lg uppercase tracking-wider`}
+              >
+                Acquire Item
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       );
     }
 
+    // --- 🌟 NATIVE LOCAL STORE HUB 🌟 ---
     if (currentView === "hub") {
       return (
         <View className="flex-1 flex-col bg-[#1c1d28]">
-          {hasBookings && hasProducts ? (
-            <View className="flex-row border-b border-[#3b3e52] bg-[#2e3142]">
-              <TouchableOpacity
-                onPress={() => setActiveTab("bookings")}
-                className={`flex-1 p-4 flex-row items-center justify-center gap-2 ${
-                  activeTab === "bookings" ? "border-b-2 border-[#d3bc8e]" : ""
-                }`}
-              >
-                <BookOpen
-                  size={16}
-                  color={activeTab === "bookings" ? "#d3bc8e" : "#9ca3af"}
-                />
-                <Text
-                  className={
-                    activeTab === "bookings"
-                      ? "text-[#d3bc8e] font-bold"
-                      : "text-gray-400 font-bold"
-                  }
-                >
-                  Book Experience
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setActiveTab("products")}
-                className={`flex-1 p-4 flex-row items-center justify-center gap-2 ${
-                  activeTab === "products" ? "border-b-2 border-[#d3bc8e]" : ""
-                }`}
-              >
-                <ShoppingBag
-                  size={16}
-                  color={activeTab === "products" ? "#d3bc8e" : "#9ca3af"}
-                />
-                <Text
-                  className={
-                    activeTab === "products"
-                      ? "text-[#d3bc8e] font-bold"
-                      : "text-gray-400 font-bold"
-                  }
-                >
-                  Shop Products
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
+          <View className="px-6 py-4 bg-[#2e3142] border-b border-[#3b3e52]">
+            <Text className="text-gray-400 font-bold text-xs uppercase tracking-widest text-center">
+              Local Merchant Goods
+            </Text>
+          </View>
           <ScrollView
             className="flex-1 p-4"
             showsVerticalScrollIndicator={false}
           >
-            {listToDisplay.status === "loading" ? (
+            {pinItems.status === "loading" ? (
               <ActivityIndicator
                 color="#d3bc8e"
                 size="large"
                 style={{ marginTop: 40 }}
               />
             ) : null}
-            {listToDisplay.status === "error" ? (
+            {pinItems.status === "error" ? (
               <Text className="text-center text-red-400 mt-10 font-medium">
-                Could not load items.
+                Could not load location stock.
               </Text>
             ) : null}
 
-            {listToDisplay.status === "success" &&
-            listToDisplay.data.length > 0 ? (
-              listToDisplay.data.map((product) => (
-                <TouchableOpacity
-                  key={product.id}
-                  onPress={() => {
-                    setSelectedProduct(product);
-                    setCurrentView("product");
-                  }}
-                  className="flex-row items-center gap-4 p-3 bg-[#2e3142] rounded-xl mb-3 border border-[#3b3e52] active:scale-95 transition-transform"
-                >
-                  <View className="relative w-20 h-20 flex-shrink-0 bg-[#1c1d28] rounded-lg overflow-hidden border border-[#3b3e52]">
-                    <Image
-                      source={{
-                        uri:
-                          product.images?.[0]?.src ||
-                          "https://placehold.co/100",
-                      }}
-                      className="w-full h-full"
-                      resizeMode="cover"
-                    />
-                  </View>
-                  <View className="flex-1">
-                    <Text
-                      className="font-bold text-base text-white mb-1"
-                      numberOfLines={2}
-                    >
-                      {product.name}
-                    </Text>
-                    <Text className="text-[#d3bc8e] font-black text-sm">
-                      {stripHtml(product.price_html)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            ) : listToDisplay.status === "success" ? (
+            {pinItems.status === "success" && pinItems.data.length > 0 ? (
+              pinItems.data.map((product) => {
+                const rarityTheme =
+                  RARITY_COLORS[product.rarity] || RARITY_COLORS.common;
+                return (
+                  <TouchableOpacity
+                    key={product.id}
+                    onPress={() => {
+                      setSelectedProduct(product);
+                      setCurrentView("product");
+                    }}
+                    className={`flex-row items-center gap-4 p-3 bg-[#2e3142] rounded-xl mb-4 border-2 ${rarityTheme.border} shadow-lg active:scale-95 transition-transform`}
+                  >
+                    <View className="relative w-20 h-20 flex-shrink-0 bg-[#1c1d28] rounded-lg overflow-hidden border border-[#3b3e52]">
+                      <Image
+                        source={{
+                          uri: product.image_url || "https://placehold.co/100",
+                        }}
+                        className="w-full h-full opacity-90"
+                        resizeMode="cover"
+                      />
+                    </View>
+                    <View className="flex-1 pr-2">
+                      <Text
+                        className="font-bold text-base text-white mb-1"
+                        numberOfLines={2}
+                      >
+                        {product.name}
+                      </Text>
+                      <Text className="text-[#d3bc8e] font-black text-sm">
+                        {product.price} {product.currency}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : pinItems.status === "success" ? (
               <Text className="text-center text-gray-500 mt-10 italic">
-                No items found.
+                No items offered at this location.
               </Text>
             ) : null}
           </ScrollView>
@@ -397,6 +383,7 @@ export default function PinDetailsModal({
       );
     }
 
+    // --- 🌟 MAIN PIN DETAILS VIEW 🌟 ---
     return (
       <ScrollView
         className="flex-1 bg-[#1c1d28]"
@@ -405,6 +392,7 @@ export default function PinDetailsModal({
         keyboardShouldPersistTaps="handled"
       >
         <View style={{ flexDirection: isDesktop ? "row" : "column" }}>
+          {/* LEFT / TOP COLUMN */}
           <View
             style={{
               width: isDesktop ? "50%" : "100%",
@@ -505,76 +493,72 @@ export default function PinDetailsModal({
                 </View>
               ) : null}
 
-              {hasBookings || hasProducts || hasStory || !!session ? (
-                <View
-                  className={`pt-2 pb-6 border-[#3b3e52] space-y-3 ${
-                    !isDesktop ? "border-b" : ""
-                  }`}
+              <View
+                className={`pt-2 pb-6 border-[#3b3e52] space-y-3 ${
+                  !isDesktop ? "border-b" : ""
+                }`}
+              >
+                <TouchableOpacity
+                  onPress={() => onGetDirections(pin)}
+                  className="w-full h-14 bg-[#2e3142] border border-[#3b3e52] rounded-xl flex-row items-center justify-center shadow-lg active:bg-[#3b3e52]"
                 >
+                  <MapPin size={20} color="#4ade80" className="mr-2" />
+                  <Text className="text-white font-bold text-base">
+                    Draw Route
+                  </Text>
+                </TouchableOpacity>
+
+                {/* 🌟 NATIVE STORE BUTTON (Only appears if Supabase found items!) 🌟 */}
+                {pinItems.data.length > 0 ? (
                   <TouchableOpacity
-                    onPress={() => onGetDirections(pin)}
-                    className="w-full h-14 bg-[#2e3142] border border-[#3b3e52] rounded-xl flex-row items-center justify-center shadow-lg active:bg-[#3b3e52]"
+                    onPress={() => setCurrentView("hub")}
+                    className="w-full h-14 bg-[#e6ce9a] rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(230,206,154,0.3)] active:scale-95"
                   >
-                    <MapPin size={20} color="#4ade80" className="mr-2" />
-                    <Text className="text-white font-bold text-base">
-                      Draw Route
+                    <ShoppingBag size={20} color="#1c1d28" className="mr-2" />
+                    <Text className="text-[#1c1d28] font-black text-base uppercase tracking-wider">
+                      Local Merchant
                     </Text>
                   </TouchableOpacity>
+                ) : null}
 
-                  {hasBookings || hasProducts ? (
+                {!!pin.story_id ? (
+                  <TouchableOpacity
+                    onPress={() => onReadStory(pin.story_id)}
+                    className="w-full h-14 bg-blue-600 rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.3)] active:bg-blue-700"
+                  >
+                    <BookOpen size={20} color="white" className="mr-2" />
+                    <Text className="text-white font-bold text-base">
+                      Read Lore
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {!!session ? (
+                  <View className="mt-2">
                     <TouchableOpacity
-                      onPress={() => setCurrentView("hub")}
-                      className="w-full h-14 bg-[#e6ce9a] rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(230,206,154,0.3)] active:scale-95"
+                      onPress={() => setPopoverOpen(!popoverOpen)}
+                      className="w-full h-14 bg-green-600/20 border border-green-500/50 rounded-xl flex-row items-center justify-center active:bg-green-600/30"
                     >
-                      <ShoppingBag size={20} color="#1c1d28" className="mr-2" />
-                      <Text className="text-[#1c1d28] font-black text-base uppercase tracking-wider">
-                        Guild Merchant
+                      <PlusCircle size={20} color="#4ade80" className="mr-2" />
+                      <Text className="text-green-400 font-bold text-base">
+                        Add to Route
                       </Text>
                     </TouchableOpacity>
-                  ) : null}
-
-                  {hasStory ? (
-                    <TouchableOpacity
-                      onPress={() => onReadStory(pin.story_id)}
-                      className="w-full h-14 bg-blue-600 rounded-xl flex-row items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.3)] active:bg-blue-700"
-                    >
-                      <BookOpen size={20} color="white" className="mr-2" />
-                      <Text className="text-white font-bold text-base">
-                        Read Lore
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-
-                  {!!session ? (
-                    <View className="mt-2">
-                      <TouchableOpacity
-                        onPress={() => setPopoverOpen(!popoverOpen)}
-                        className="w-full h-14 bg-green-600/20 border border-green-500/50 rounded-xl flex-row items-center justify-center active:bg-green-600/30"
-                      >
-                        <PlusCircle
-                          size={20}
-                          color="#4ade80"
-                          className="mr-2"
+                    {popoverOpen ? (
+                      <View className="mt-3 p-4 bg-[#2e3142] rounded-xl border border-[#3b3e52] shadow-xl">
+                        <AddToExperiencePopover
+                          pin={pin}
+                          closePopover={() => setPopoverOpen(false)}
                         />
-                        <Text className="text-green-400 font-bold text-base">
-                          Add to Route
-                        </Text>
-                      </TouchableOpacity>
-                      {popoverOpen ? (
-                        <View className="mt-3 p-4 bg-[#2e3142] rounded-xl border border-[#3b3e52] shadow-xl">
-                          <AddToExperiencePopover
-                            pin={pin}
-                            closePopover={() => setPopoverOpen(false)}
-                          />
-                        </View>
-                      ) : null}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
             </View>
           </View>
 
+          {/* RIGHT / BOTTOM COLUMN */}
           <View
             style={{ width: isDesktop ? "50%" : "100%" }}
             className={`px-6 ${isDesktop ? "py-6" : "mt-6"}`}

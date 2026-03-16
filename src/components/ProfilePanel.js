@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabaseClient";
+import MerchantDashboardPanel from "@/components/MerchantDashboardPanel"; // 🌟 NEW
 import {
   User,
   Map as MapIcon,
@@ -25,6 +26,7 @@ import {
   UserPlus,
   Check,
   X as XIcon,
+  Store, // 🌟 NEW: Added Store icon
 } from "lucide-react-native";
 
 export default function ProfilePanel({ isOpen, onClose }) {
@@ -45,6 +47,8 @@ export default function ProfilePanel({ isOpen, onClose }) {
   const [addFriendUsername, setAddFriendUsername] = useState("");
   const [isAddingFriend, setIsAddingFriend] = useState(false);
 
+  const [isMerchantDashboardOpen, setIsMerchantDashboardOpen] = useState(false);
+
   // 🌟 Only fetch data when the panel is opened
   useEffect(() => {
     if (isOpen) {
@@ -64,11 +68,13 @@ export default function ProfilePanel({ isOpen, onClose }) {
       }
       setUserAuth(user);
 
+      // This grabs ALL profile data, including our new 'role' column!
       const { data: profile } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
+
       if (profile) {
         setUserProfile(profile);
         setNewUsername(profile.username || "");
@@ -118,6 +124,7 @@ export default function ProfilePanel({ isOpen, onClose }) {
       )
       .eq("status", "accepted")
       .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+
     if (accepted) {
       const formattedFriends = accepted.map((f) =>
         f.requester.id === userId ? f.addressee : f.requester
@@ -151,6 +158,7 @@ export default function ProfilePanel({ isOpen, onClose }) {
         .select("id")
         .ilike("username", addFriendUsername.trim())
         .single();
+
       if (profileError || !targetProfile) {
         Alert.alert(
           "Traveler Not Found",
@@ -172,6 +180,7 @@ export default function ProfilePanel({ isOpen, onClose }) {
           status: "pending",
         },
       ]);
+
       if (insertError) {
         if (insertError.code === "23505")
           Alert.alert(
@@ -209,13 +218,11 @@ export default function ProfilePanel({ isOpen, onClose }) {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     onClose();
-    // Optional: hard reload the app state if needed
   };
 
   if (!isOpen) return null;
 
   return (
-    // 🌟 SLIDE-OVER CONTAINER 🌟
     <View className="absolute top-0 left-0 w-full sm:w-[400px] h-full bg-[#1c1d28]/95 backdrop-blur-xl z-[100] border-r border-[#3b3e52] shadow-2xl animate-in slide-in-from-left duration-300 flex-col pointer-events-auto">
       {/* Header */}
       <View className="pt-14 px-6 pb-4 flex-row items-center border-b border-[#3b3e52] bg-transparent">
@@ -250,7 +257,11 @@ export default function ProfilePanel({ isOpen, onClose }) {
                 )}
                 <View className="absolute -bottom-3 bg-[#e6ce9a] px-3 py-1.5 rounded-full border-2 border-[#1c1d28]">
                   <Text className="text-[#1c1d28] text-[10px] font-black uppercase tracking-wider">
-                    Explorer
+                    {userProfile?.role === "admin"
+                      ? "Guild Master"
+                      : userProfile?.role === "merchant"
+                      ? "Merchant"
+                      : "Explorer"}
                   </Text>
                 </View>
               </View>
@@ -295,12 +306,40 @@ export default function ProfilePanel({ isOpen, onClose }) {
               </Text>
             </View>
 
+            {/* 🌟 NEW: THE MERCHANT & ADMIN DASHBOARD BUTTON 🌟 */}
+            {(userProfile?.role === "admin" ||
+              userProfile?.role === "merchant") && (
+              <View className="mb-10 animate-in fade-in duration-500">
+                <Text className="text-[#d3bc8e] font-bold uppercase tracking-widest text-xs mb-4 ml-2 border-b border-[#3b3e52] pb-2">
+                  Guild Supply ({userProfile.role})
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsMerchantDashboardOpen(true)} // 🌟 CHANGED THIS LINE
+                  className="w-full bg-[#d3bc8e]/10 border border-[#d3bc8e] rounded-3xl p-5 flex-row items-center justify-between shadow-[0_0_20px_rgba(211,188,142,0.15)] active:bg-[#d3bc8e]/20"
+                >
+                  <View className="flex-row items-center">
+                    <View className="bg-[#1c1d28] p-3 rounded-full border border-[#d3bc8e]/50">
+                      <Store size={24} color="#d3bc8e" />
+                    </View>
+                    <View className="ml-4">
+                      <Text className="text-white font-black text-lg">
+                        Manage Inventory
+                      </Text>
+                      <Text className="text-[#d3bc8e] font-medium text-xs mt-1">
+                        Upload products & tickets
+                      </Text>
+                    </View>
+                  </View>
+                  <ChevronRight size={20} color="#d3bc8e" />
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* Travel Buddies */}
             <View className="mb-10">
-              <Text className="text-[#d3bc8e] font-bold uppercase tracking-widest text-xs mb-4 ml-2 border-b border-[#3b3e52] pb-2">
+              <Text className="text-gray-500 font-bold uppercase tracking-widest text-xs mb-4 ml-2 border-b border-[#3b3e52] pb-2">
                 Travel Buddies
               </Text>
-
               <View className="flex-row gap-2 mb-6">
                 <View className="flex-1 bg-[#1c1d28] border border-[#3b3e52] rounded-xl px-4 flex-row items-center">
                   <UserPlus size={18} color="#6b7280" />
@@ -389,7 +428,7 @@ export default function ProfilePanel({ isOpen, onClose }) {
 
             {/* Inbox */}
             <View className="mb-10">
-              <Text className="text-[#d3bc8e] font-bold uppercase tracking-widest text-xs mb-4 ml-2 border-b border-[#3b3e52] pb-2">
+              <Text className="text-gray-500 font-bold uppercase tracking-widest text-xs mb-4 ml-2 border-b border-[#3b3e52] pb-2">
                 Inbox: Shared With You
               </Text>
               {sharedMaps.length === 0 ? (
@@ -469,6 +508,11 @@ export default function ProfilePanel({ isOpen, onClose }) {
           </View>
         </ScrollView>
       )}
+
+      <MerchantDashboardPanel
+        isOpen={isMerchantDashboardOpen}
+        onClose={() => setIsMerchantDashboardOpen(false)}
+      />
     </View>
   );
 }
